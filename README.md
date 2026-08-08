@@ -20,6 +20,7 @@ doom_helpers/
 │       └── maps.py                  # THINGS/LINEDEFS/SIDEDEFS/VERTEXES/SECTORS
 ├── scripts/
 │   ├── extract_sprite_atlas.py     # WAD sprites -> PNG atlas page(s) + manifest
+│   ├── realign_sprite_atlas.py     # re-fit tiles to hand-edited art + fix offsets
 │   └── rebuild_sprite_atlas.py     # PNG atlas page(s) + manifest -> WAD sprites
 ├── tests/
 └── pyproject.toml
@@ -73,7 +74,32 @@ python scripts/extract_sprite_atlas.py \
     --wad DOOM2.WAD --sprite TROO --sprite SARG --output-dir atlases/monsters
 ```
 
-`scripts/rebuild_sprite_atlas.py` is the companion: it reads the manifest,
+Edit the atlas PNGs in any image editor. Edits don't need to land
+pixel-perfect inside the original tile -- that's what the next step is for.
+
+`scripts/realign_sprite_atlas.py` re-scans each sprite's tile (plus a small
+margin, so art drawn right up to the original edge isn't missed), trims to
+the actual opaque pixels the artist left behind, and shifts the patch's
+left/top offsets by the same amount so the sprite still lines up on the same
+in-game anchor point. It never moves or resizes pixels on the atlas page --
+only the manifest's bookkeeping (`x`/`y`/`width`/`height`/offsets) is
+updated. Run it before rebuilding:
+
+```bash
+python scripts/realign_sprite_atlas.py --manifest atlases/troo/TROO_manifest.json
+
+# preview what would change without writing the manifest
+python scripts/realign_sprite_atlas.py --manifest atlases/troo/TROO_manifest.json --dry-run
+```
+
+If a sprite's redrawn content touches the edge of the scanned margin, the
+script prints a warning -- that usually means the edit spilled past its
+allotted tile (drew larger than the original) and needs a bigger tile
+(re-extract with more `--padding`) or a smaller redraw; realignment can only
+recover content within the tile's reserved space, not content painted over a
+neighboring sprite's tile.
+
+`scripts/rebuild_sprite_atlas.py` is the last step: it reads the manifest,
 crops each sprite's tile back out of its atlas page, re-encodes it as a Doom
 picture-format lump with the manifest's embedded palette, and writes the
 lumps into a PWAD (or updates an existing WAD's matching lumps in place).
@@ -87,10 +113,10 @@ python scripts/rebuild_sprite_atlas.py \
     --manifest atlases/troo/TROO_manifest.json --wad mymod.wad --output mymod.wad
 ```
 
-Edit the atlas PNGs in any image editor between the two steps -- just keep
-each sprite's pixels inside its tile bounds from the manifest. The Doom
-picture format only supports up to 255px tall images (single-byte post
-offsets), which `encode_patch` enforces.
+The full pipeline: `extract_sprite_atlas.py` -> hand-edit the PNGs ->
+`realign_sprite_atlas.py` -> `rebuild_sprite_atlas.py`. The Doom picture
+format only supports up to 255px tall images (single-byte post offsets),
+which `encode_patch` enforces.
 
 ## Tests
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
@@ -164,4 +165,104 @@ def iter_manifest_sprites(
         x, y, w, h = entry["x"], entry["y"], entry["width"], entry["height"]
         tile = page.crop((x, y, x + w, y + h))
         results.append((entry["name"], tile, entry["left_offset"], entry["top_offset"]))
+    return results
+
+
+@dataclass
+class RealignResult:
+    name: str
+    changed: bool
+    dx: int
+    dy: int
+    old_box: tuple[int, int, int, int]  # x, y, width, height
+    new_box: tuple[int, int, int, int]
+    warning: str | None = None
+
+
+def realign_sprites(
+    manifest: dict,
+    pages: list[Image.Image],
+    alpha_threshold: int = 128,
+    margin: int | None = None,
+) -> list[RealignResult]:
+    """Re-detect each sprite's tight bounding box within its allotted tile.
+
+    Hand-edited atlas art is rarely pixel-perfect: a redrawn frame might be
+    smaller than the original tile or shifted a few pixels within it. This
+    re-scans each tile (plus a small margin so content drawn right up to the
+    original edge isn't missed), trims to the opaque pixels found, and
+    shifts left_offset/top_offset by the same amount so the sprite's anchor
+    point still lines up in-game. Pixels on the atlas page are never moved
+    or resized -- only the manifest's bookkeeping is updated.
+
+    Mutates `manifest["sprites"]` in place and also returns one
+    RealignResult per sprite, so callers can report what moved and flag
+    anything that looks like it spilled past its allotted space.
+    """
+    if margin is None:
+        margin = manifest.get("padding", DEFAULT_PADDING)
+
+    results = []
+    for entry in manifest["sprites"]:
+        page = pages[entry["page"]]
+        page_w, page_h = page.size
+        x, y, w, h = entry["x"], entry["y"], entry["width"], entry["height"]
+
+        search_left = max(0, x - margin)
+        search_top = max(0, y - margin)
+        search_right = min(page_w, x + w + margin)
+        search_bottom = min(page_h, y + h + margin)
+
+        region = page.crop((search_left, search_top, search_right, search_bottom))
+        alpha = region.split()[-1]
+        mask = alpha.point(lambda a, t=alpha_threshold: 255 if a >= t else 0)
+        bbox = mask.getbbox()
+
+        if bbox is None:
+            results.append(
+                RealignResult(
+                    name=entry["name"],
+                    changed=False,
+                    dx=0,
+                    dy=0,
+                    old_box=(x, y, w, h),
+                    new_box=(x, y, w, h),
+                    warning=(
+                        f"{entry['name']!r} has no opaque pixels in its tile "
+                        "(fully transparent) -- left unchanged"
+                    ),
+                )
+            )
+            continue
+
+        bx0, by0, bx1, by1 = bbox
+        new_x, new_y = search_left + bx0, search_top + by0
+        new_w, new_h = bx1 - bx0, by1 - by0
+        dx, dy = new_x - x, new_y - y
+
+        warning = None
+        if bx0 == 0 or by0 == 0 or bx1 == region.width or by1 == region.height:
+            warning = (
+                f"{entry['name']!r} content touches the edge of its search area "
+                f"({margin}px margin) -- it may be clipped; re-extract with more "
+                "padding or shrink the artwork to fit"
+            )
+
+        entry["x"], entry["y"] = new_x, new_y
+        entry["width"], entry["height"] = new_w, new_h
+        entry["left_offset"] = entry["left_offset"] - dx
+        entry["top_offset"] = entry["top_offset"] - dy
+
+        results.append(
+            RealignResult(
+                name=entry["name"],
+                changed=(dx != 0 or dy != 0 or new_w != w or new_h != h),
+                dx=dx,
+                dy=dy,
+                old_box=(x, y, w, h),
+                new_box=(new_x, new_y, new_w, new_h),
+                warning=warning,
+            )
+        )
+
     return results
