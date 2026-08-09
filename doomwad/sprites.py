@@ -60,6 +60,24 @@ def find_sprite_lumps(wad: Wad, prefixes: list[str]) -> list[Lump]:
     ]
 
 
+def list_sprite_prefixes(wad: Wad) -> dict[str, list[str]]:
+    """Group every sprite/patch lump in `wad` by its 4-character prefix.
+
+    This is how you discover which sprite "entities" (e.g. TROO, POSS,
+    SARG) a WAD actually contains, so you know what to pass to
+    `find_sprite_lumps` / `--sprite` without already knowing the WAD's
+    contents by heart. Returns {prefix: [lump names sorted]}, restricted to
+    the S_START/S_END (or SS_START/SS_END) range when present.
+    """
+    groups: dict[str, list[str]] = {}
+    for lump in _lumps_in_sprite_range(wad):
+        match = _SPRITE_NAME_RE.match(lump.name)
+        if not match:
+            continue
+        groups.setdefault(match.group("prefix"), []).append(lump.name)
+    return {prefix: sorted(names) for prefix, names in sorted(groups.items())}
+
+
 def _lumps_in_sprite_range(wad: Wad) -> list[Lump]:
     for start_name, end_name in _SPRITE_MARKER_PAIRS:
         if start_name in wad and end_name in wad:

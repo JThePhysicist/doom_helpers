@@ -1,7 +1,13 @@
 from PIL import Image
 
 from doomwad.palette import Palette
-from doomwad.sprites import decode_patch, encode_patch, find_sprite_lumps, sprite_name_matches
+from doomwad.sprites import (
+    decode_patch,
+    encode_patch,
+    find_sprite_lumps,
+    list_sprite_prefixes,
+    sprite_name_matches,
+)
 from doomwad.wad import Wad
 
 
@@ -79,3 +85,22 @@ def test_find_sprite_lumps_respects_markers_and_prefix():
 
     found = find_sprite_lumps(wad, ["TROO"])
     assert [lump.name for lump in found] == ["TROOA1", "TROOA2A8"]
+
+
+def test_list_sprite_prefixes_groups_and_excludes_non_sprites():
+    wad = Wad()
+    wad.add("DEMO1", b"")
+    wad.add("S_START", b"")
+    wad.add("TROOA1", b"")
+    wad.add("TROOA2A8", b"")
+    wad.add("TROOB1", b"")
+    wad.add("POSSA1", b"")
+    wad.add("S_END", b"")
+    wad.add("PLAYPAL", b"\x00" * 768)
+
+    prefixes = list_sprite_prefixes(wad)
+
+    assert prefixes == {
+        "POSS": ["POSSA1"],
+        "TROO": ["TROOA1", "TROOA2A8", "TROOB1"],
+    }

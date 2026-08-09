@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .sprites import list_sprite_prefixes
 from .wad import Wad
 
 
@@ -10,6 +11,20 @@ def cmd_list(args: argparse.Namespace) -> int:
     wad = Wad.load(args.wad)
     for i, lump in enumerate(wad.lumps):
         print(f"{i:5d}  {lump.name:<8s}  {lump.size:8d}")
+    return 0
+
+
+def cmd_list_sprites(args: argparse.Namespace) -> int:
+    wad = Wad.load(args.wad)
+    prefixes = list_sprite_prefixes(wad)
+    if not prefixes:
+        print("No sprite lumps found (no S_START/S_END or SS_START/SS_END range?)")
+        return 0
+    for prefix, names in prefixes.items():
+        print(f"{prefix}  ({len(names)} lump{'s' if len(names) != 1 else ''})")
+        if args.verbose:
+            for name in names:
+                print(f"    {name}")
     return 0
 
 
@@ -47,6 +62,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_extract.add_argument("lump", help="Name of the lump to extract")
     p_extract.add_argument("-o", "--output", help="Output file path")
     p_extract.set_defaults(func=cmd_extract)
+
+    p_list_sprites = subparsers.add_parser(
+        "list-sprites",
+        help="List sprite entities (4-char prefixes like TROO, POSS, SARG) found in a WAD",
+    )
+    p_list_sprites.add_argument("wad", help="Path to the WAD file")
+    p_list_sprites.add_argument(
+        "-v", "--verbose", action="store_true", help="Also list each lump name per prefix"
+    )
+    p_list_sprites.set_defaults(func=cmd_list_sprites)
 
     return parser
 
