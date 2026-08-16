@@ -1,11 +1,15 @@
+import pytest
 from PIL import Image
 
 from doomwad import Wad
 from doomwad.palette import Palette
 from doomwad.sprites import encode_patch
+from hudface.generator import StyleKnobs
 from hudface.main import (
+    build_arg_parser,
     find_matching_source,
     load_reference_sprite,
+    main,
     process_target,
     read_target_filenames,
     run,
@@ -110,8 +114,8 @@ def test_process_target_generates_quantizes_and_saves(tmp_path, monkeypatch):
         "hudface.main.geometry.validate_and_align", lambda path, state: "aligned-face"
     )
 
-    def fake_generate(aligned, reference_sprite, health_tier, expression):
-        calls["generate"] = (aligned, health_tier, expression)
+    def fake_generate(aligned, reference_sprite, health_tier, expression, knobs=None):
+        calls["generate"] = (aligned, health_tier, expression, knobs)
         return Image.new("RGB", (2, 2), (1, 2, 3))
 
     def fake_quantize(image, palette_arg, size=(24, 29)):
@@ -122,10 +126,11 @@ def test_process_target_generates_quantizes_and_saves(tmp_path, monkeypatch):
     monkeypatch.setattr("hudface.main.quantizer.quantize", fake_quantize)
 
     out_dir = tmp_path / "out"
-    succeeded = process_target("STFST00.png", sources, wad, palette, out_dir)
+    knobs = StyleKnobs(wound_intensity=4, tiredness=3, gore_level=1)
+    succeeded = process_target("STFST00.png", sources, wad, palette, out_dir, knobs)
 
     assert succeeded is True
-    assert calls["generate"] == ("aligned-face", 0, "ST")
+    assert calls["generate"] == ("aligned-face", 0, "ST", knobs)
     assert calls["quantize"] is True
     assert (out_dir / "STFST00.png").exists()
 
@@ -148,10 +153,11 @@ def test_run_reports_failures_but_keeps_processing_remaining_targets(tmp_path, m
     monkeypatch.setattr(
         "hudface.main.geometry.validate_and_align", lambda path, state: "aligned-face"
     )
+    generate_calls = []
     monkeypatch.setattr(
         "hudface.main.generator.generate",
-        lambda aligned, reference_sprite, health_tier, expression: Image.new(
-            "RGB", (2, 2), (1, 2, 3)
+        lambda aligned, reference_sprite, health_tier, expression, knobs=None: (
+            generate_calls.append(knobs) or Image.new("RGB", (2, 2), (1, 2, 3))
         ),
     )
     monkeypatch.setattr(
@@ -160,8 +166,67 @@ def test_run_reports_failures_but_keeps_processing_remaining_targets(tmp_path, m
     )
 
     out_dir = tmp_path / "out"
-    failures = run(sources, targets_path, wad_path, out_dir)
+    knobs = StyleKnobs(wound_intensity=2, tiredness=1, gore_level=3)
+    failures = run(sources, targets_path, wad_path, out_dir, knobs)
 
     assert failures == ["STFOUCH0.png"]
     assert (out_dir / "STFST00.png").exists()
     assert not (out_dir / "STFOUCH0.png").exists()
+    # knobs must reach generator.generate for every processed target.
+    assert generate_calls == [knobs]
+
+
+def test_arg_parser_defaults_leave_wound_intensity_auto_and_moderate_gore():
+    args = build_arg_parser().parse_args(
+        ["--sources-dir=s", "--targets=t", "--iwad=i", "--output-dir=o"]
+    )
+    assert args.wound_intensity is None
+    assert args.tiredness == 0
+    assert args.gore_level == 2
+
+
+def test_arg_parser_accepts_explicit_knob_values():
+    args = build_arg_parser().parse_args(
+        [
+            "--sources-dir=s",
+            "--targets=t",
+            "--iwad=i",
+            "--output-dir=o",
+            "--wound-intensity=4",
+            "--tiredness=3",
+            "--gore-level=1",
+        ]
+    )
+    assert (args.wound_intensity, args.tiredness, args.gore_level) == (4, 3, 1)
+
+
+def test_arg_parser_rejects_out_of_range_knob_values():
+    with pytest.raises(SystemExit):
+        build_arg_parser().parse_args(
+            ["--sources-dir=s", "--targets=t", "--iwad=i", "--output-dir=o", "--gore-level=9"]
+        )
+
+
+def test_main_builds_style_knobs_from_cli_args_and_passes_to_run(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(sources_dir, targets_path, iwad_path, output_dir, knobs=None):
+        captured["knobs"] = knobs
+        return []
+
+    monkeypatch.setattr("hudface.main.run", fake_run)
+
+    exit_code = main(
+        [
+            "--sources-dir=s",
+            "--targets=t",
+            "--iwad=i",
+            "--output-dir=o",
+            "--wound-intensity=4",
+            "--tiredness=2",
+            "--gore-level=0",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured["knobs"] == StyleKnobs(wound_intensity=4, tiredness=2, gore_level=0)

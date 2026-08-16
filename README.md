@@ -162,7 +162,10 @@ python -m hudface.main \
     --sources-dir photos/ \
     --targets targets.txt \
     --iwad DOOM.WAD \
-    --output-dir output/
+    --output-dir output/ \
+    --wound-intensity 4 \
+    --tiredness 2 \
+    --gore-level 3
 ```
 
 - `--sources-dir`: candidate headshot photos. For each target, Phase 2
@@ -172,6 +175,21 @@ python -m hudface.main \
   (e.g. `STFST21.png`), blank lines and `#`-comments ignored.
 - `--iwad`: a real Doom IWAD (`DOOM.WAD`/`DOOM2.WAD`), used for both the
   PLAYPAL and the original `STF*` sprites (IP-Adapter style references).
+
+Style knobs (all 0-4, applied uniformly across the whole sprite set):
+
+- `--wound-intensity`: how bloody/injured faces look. **Default: unset**,
+  meaning each frame derives it from its own Doom health tier (an
+  `STFST4x` frame looks worse than an `STFST0x` one automatically). Set it
+  explicitly to decouple the look from the tier -- e.g. `4` makes every
+  frame, even the healthiest, look severely wounded.
+- `--tiredness`: dark circles/haggard exhaustion, layered on independently
+  of health tier or wounds. **Default: `0`** (no tiredness styling).
+- `--gore-level`: how graphic the wound wording gets (only has an effect
+  when there's a wound at all, i.e. `--wound-intensity` isn't 0). `0` is
+  "clean/tasteful" and also adds extra negative-prompt suppression since
+  the model can still add blood unprompted; `4` is "extremely graphic,
+  gruesome". **Default: `2`** (moderate).
 
 Or via Docker Compose (GPU passthrough via `nvidia-container-toolkit`):
 
