@@ -18,10 +18,13 @@ doom_helpers/
 │   └── lumps/                     # typed parsers for structured lump data
 │       ├── __init__.py
 │       └── maps.py                  # THINGS/LINEDEFS/SIDEDEFS/VERTEXES/SECTORS
+├── hudface/                # headshot -> Doom HUD face sprite pipeline (see below)
+├── docker/                  # Dockerfile + docker-compose.yml for hudface
 ├── scripts/
 │   ├── extract_sprite_atlas.py     # WAD sprites -> PNG atlas page(s) + manifest
 │   ├── realign_sprite_atlas.py     # re-fit tiles to hand-edited art + fix offsets
-│   └── rebuild_sprite_atlas.py     # PNG atlas page(s) + manifest -> WAD sprites
+│   ├── rebuild_sprite_atlas.py     # PNG atlas page(s) + manifest -> WAD sprites
+│   └── check_complexity.sh         # xenon/radon complexity gate for hudface
 ├── tests/
 └── pyproject.toml
 ```
@@ -117,6 +120,87 @@ The full pipeline: `extract_sprite_atlas.py` -> hand-edit the PNGs ->
 `realign_sprite_atlas.py` -> `rebuild_sprite_atlas.py`. The Doom picture
 format only supports up to 255px tall images (single-byte post offsets),
 which `encode_patch` enforces.
+
+## hudface: headshot -> Doom HUD face sprite pipeline
+
+`hudface/` is a separate, tokenless (no LLM/agentic routing) DAG pipeline
+that turns a user's headshot photo into a full set of Doom status-bar face
+sprites (`STF*`), ready to import into SLADE3. It runs entirely locally on
+an NVIDIA GPU (8GB+ VRAM) and does not call any external APIs.
+
+```
+hudface/
+├── parser.py      # Phase 1: STF filename -> FaceState (expression, health tier, gaze)
+├── geometry.py     # Phase 2: MediaPipe face validation + crop/align to FaceState
+├── generator.py      # Phase 3: SD1.5 ControlNet + IP-Adapter style/damage transfer
+├── quantizer.py         # Phase 4: resize, cyan-key background, PLAYPAL quantize
+└── main.py                # Phase 5: plain sequential orchestrator (no dynamic routing)
+```
+
+It reuses `doomwad` for everything WAD/palette-related instead of
+reimplementing it: `doomwad.Wad`/`doomwad.Palette.from_wad` load the IWAD's
+PLAYPAL, `doomwad.decode_patch` decodes the original `STF*` sprites used as
+Phase 3's style reference, and `doomwad.palette.Palette.nearest_index` is
+the actual Euclidean-nearest-PLAYPAL-color mapping Phase 4 quantizes onto.
+
+### Install
+
+The core `doomwad`/`hudface.parser` install stays lightweight. The
+GPU/ML stack (torch, diffusers, transformers, mediapipe, opencv, rembg) is
+an optional extra so it's never required just to run the WAD tooling or the
+fast unit tests:
+
+```bash
+pip install -e ".[dev]"              # tests, mypy, mutmut, radon/xenon
+pip install -e ".[sprite-pipeline]"  # torch/diffusers/mediapipe/... (needs a CUDA GPU)
+```
+
+### Run
+
+```bash
+python -m hudface.main \
+    --sources-dir photos/ \
+    --targets targets.txt \
+    --iwad DOOM.WAD \
+    --output-dir output/
+```
+
+- `--sources-dir`: candidate headshot photos. For each target, Phase 2
+  tries them in sorted order and uses the first one whose gaze/expression
+  matches; a target with no matching photo is skipped (logged), not fatal.
+- `--targets`: a text file listing target STF filenames, one per line
+  (e.g. `STFST21.png`), blank lines and `#`-comments ignored.
+- `--iwad`: a real Doom IWAD (`DOOM.WAD`/`DOOM2.WAD`), used for both the
+  PLAYPAL and the original `STF*` sprites (IP-Adapter style references).
+
+Or via Docker Compose (GPU passthrough via `nvidia-container-toolkit`):
+
+```bash
+cd docker && docker compose up --build
+```
+
+mounting `./sources`, `./targets` (including the IWAD and `targets.txt`),
+and `./output` from the repo root.
+
+### Quality gates
+
+```bash
+pytest                          # unit + pytest-bdd suites (no GPU/heavy deps needed)
+mypy                             # strict type checking, scoped to hudface/
+scripts/check_complexity.sh       # xenon/radon cyclomatic complexity gate (max grade B per function)
+mutmut run                         # mutation testing on the Phase 4 palette-mapping logic
+```
+
+`pytest`, `mypy`, and the complexity gate all run without the
+`sprite-pipeline` extra installed: Phase 3 (`generator.py`) and the actual
+MediaPipe/torch calls in Phase 2/4 are the only parts that need a real GPU,
+and every module defers those heavy imports to the functions that use them
+so importing/testing the rest of the pipeline never requires them. The BDD
+suite (`tests/features/stf_parsing.feature`) covers every real 1993 STF
+face name (`ST`, `OUCH`, `EVL`, `KILL`, `GOD`, `DEAD`, `TL`, `TR`, all
+health tiers, all gaze directions). `mutmut` is configured
+(`[tool.mutmut]` in `pyproject.toml`) against `hudface/quantizer.py` and
+`doomwad/palette.py`'s `Palette.nearest_index`.
 
 ## Tests
 

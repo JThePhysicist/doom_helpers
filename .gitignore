@@ -8,3 +8,6 @@ dist/
 venv/
 *.wad
 !tests/**/*.wad
+.mypy_cache/
+mutants/
+.mutmut-cache

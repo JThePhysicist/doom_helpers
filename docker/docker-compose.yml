@@ -1,0 +1,30 @@
+services:
+  hudface:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: hudface-sprite-pipeline
+    volumes:
+      - ../sources:/data/sources:ro
+      - ../targets:/data/targets:ro
+      - ../output:/data/output
+      # Cache downloaded model weights across runs instead of re-fetching
+      # multi-GB SD1.5/ControlNet/IP-Adapter files every container start.
+      - hudface-model-cache:/root/.cache/huggingface
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    command:
+      - --sources-dir=/data/sources
+      - --targets=/data/targets/targets.txt
+      - --iwad=/data/targets/DOOM.WAD
+      - --output-dir=/data/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  hudface-model-cache:
