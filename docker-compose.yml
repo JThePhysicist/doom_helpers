@@ -1,0 +1,24 @@
+services:
+  doomface:
+    build: .
+    image: doomface:latest
+    volumes:
+      - ./data/source:/data/source:ro # source headshots
+      - ./data/wad:/data/wad:ro # PLAYPAL / reference WAD
+      - ./models:/models:ro # face_landmarker.task, selfie_segmenter.tflite
+      - ./output:/output # generated sprite PNGs
+      - ./cache/huggingface:/root/.cache/huggingface # SD1.5/ControlNet/IP-Adapter weights, persisted across runs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command:
+      - --source-dir=/data/source
+      - --playpal=/data/wad/DOOM2.WAD
+      - --reference-wad=/data/wad/DOOM2.WAD
+      - --face-model=/models/face_landmarker.task
+      - --segmenter-model=/models/selfie_segmenter.tflite
+      - --output-dir=/output

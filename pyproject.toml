@@ -7,19 +7,69 @@ name = "doomwad"
 version = "0.1.0"
 description = "A library and CLI for reading and editing Doom WAD files"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "jjgossel" }]
 dependencies = ["Pillow>=10.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+doomface = [
+    "torch>=2.1",
+    "diffusers>=0.27",
+    "transformers>=4.38",
+    "accelerate>=0.27",
+    "mediapipe>=0.10",
+    "opencv-python-headless>=4.9",
+    "numpy>=1.26",
+]
+doomface-dev = [
+    "doomwad[doomface]",
+    "pytest>=7.0",
+    "pytest-bdd>=7.0",
+    "mutmut>=2.5",
+    "radon>=6.0",
+    "xenon>=0.9",
+    "mypy>=1.9",
+]
 
 [project.scripts]
 doomwad = "doomwad.cli:main"
+doomface = "doomface.main:main"
 
-[tool.setuptools.packages.find]
-include = ["doomwad*"]
+[tool.setuptools]
+packages = ["doomwad", "doomwad.lumps", "doomface"]
+
+[tool.setuptools.package-dir]
+doomface = "src/doomface"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_configs = true
+exclude = ["^doomwad/", "^scripts/", "^tests/"]
+
+[[tool.mypy.overrides]]
+module = [
+    "torch.*",
+    "diffusers.*",
+    "transformers.*",
+    "accelerate.*",
+    "mediapipe.*",
+    "cv2.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# doomwad predates this pipeline and isn't part of its strict-typing contract;
+# still follow it (so Palette's real types are checked at doomface call sites)
+# but don't surface its own pre-existing type errors through this gate.
+module = "doomwad.*"
+follow_imports = "silent"
+
+[tool.mutmut]
+source_paths = ["src/doomface/quantizer.py"]
+pytest_add_cli_args_test_selection = ["tests/doomface/"]

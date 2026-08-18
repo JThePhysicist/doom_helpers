@@ -8,3 +8,15 @@ dist/
 venv/
 *.wad
 !tests/**/*.wad
+
+# doomface pipeline
+.mutmut-cache
+mutants/
+data/
+models/
+output/
+cache/
+*.task
+*.tflite
+*.safetensors
+*.ckpt
