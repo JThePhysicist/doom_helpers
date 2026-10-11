@@ -35,6 +35,7 @@ from doomwad.atlas import load_atlas_pages, load_manifest, realign_sprites
 
 
 def configure_parser(parser):
+    parser.add_argument("--debug", action="store_true", default=argparse.SUPPRESS)
     parser.add_argument("--manifest", required=True, help="Path to the *_manifest.json")
     parser.add_argument(
         "--atlas-dir",
@@ -95,6 +96,5 @@ def run(args, parser):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    configure_parser(parser)
-    return run(parser.parse_args(argv), parser)
+    from doomwad.commands import legacy_main
+    return legacy_main(sys.modules[__name__], argv)

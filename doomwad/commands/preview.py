@@ -1,4 +1,5 @@
 """Preview atlas tiles, allocation bounds, anchors, palette, and optional differences."""
+import argparse
 from pathlib import Path
 
 from doomwad.atlas import load_manifest, load_atlas_pages
@@ -6,6 +7,7 @@ from doomwad.preview import write_preview
 
 
 def configure_parser(parser):
+    parser.add_argument("--debug", action="store_true", default=argparse.SUPPRESS)
     parser.add_argument('--manifest',required=True)
     parser.add_argument('--atlas-dir')
     parser.add_argument('--baseline',help='Optional baseline manifest for pixel comparison')

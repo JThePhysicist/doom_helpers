@@ -20,13 +20,14 @@ import sys
 from pathlib import Path
 
 from doomwad.atlas import DEFAULT_ATLAS_SIZE, DEFAULT_PADDING, build_atlas, save_atlas
-from doomwad.exceptions import DoomWadError
+from doomwad.exceptions import DoomWadError, LumpNotFoundError
 from doomwad.palette import Palette
 from doomwad.sprites import decode_patch, find_sprite_lumps
 from doomwad.wad import Wad
 
 
 def configure_parser(parser):
+    parser.add_argument("--debug", action="store_true", default=argparse.SUPPRESS)
     parser.add_argument("--wad", required=True, help="WAD file containing the sprites")
     parser.add_argument(
         "--palette-wad",
@@ -65,7 +66,7 @@ def run(args, parser):
     palette_wad = Wad.load(args.palette_wad) if args.palette_wad else wad
     try:
         palette = Palette.from_wad(palette_wad, palette_index=args.palette_index)
-    except DoomWadError:
+    except LumpNotFoundError:
         parser.error(
             "No PLAYPAL lump found in "
             f"{args.palette_wad or args.wad}. Pass --palette-wad pointing at a "
@@ -95,6 +96,5 @@ def run(args, parser):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    configure_parser(parser)
-    return run(parser.parse_args(argv), parser)
+    from doomwad.commands import legacy_main
+    return legacy_main(sys.modules[__name__], argv)
