@@ -57,7 +57,15 @@ def main(argv: list[str] | None = None) -> int:
         if name in wad:
             wad.replace(name, data)
         else:
-            wad.add(name, data)
+            end_markers = [i for i, lump in enumerate(wad.lumps)
+                           if lump.name in ("S_END", "SS_END")]
+            if end_markers:
+                wad.insert(end_markers[-1], name, data)
+            else:
+                if "S_START" not in wad and "SS_START" not in wad:
+                    wad.add("S_START", b"")
+                wad.add(name, data)
+                wad.add("S_END", b"")
         count += 1
 
     wad.save(args.output)

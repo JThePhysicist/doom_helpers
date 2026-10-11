@@ -41,6 +41,9 @@ class Wad:
 
         wad = cls(wad_type=wad_type)
 
+        if num_lumps < 0:
+            raise InvalidWadError("WAD has a negative lump count")
+
         dir_end = info_table_ofs + num_lumps * _DIRENTRY_SIZE
         if info_table_ofs < 0 or dir_end > len(data):
             raise InvalidWadError("WAD directory extends past end of file")
@@ -52,6 +55,8 @@ class Wad:
             )
             name = raw_name.split(b"\x00", 1)[0].decode("ascii", errors="replace")
 
+            if size < 0:
+                raise InvalidWadError(f"Lump {name!r} has a negative size")
             if size == 0:
                 lump_data = b""
             else:

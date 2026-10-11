@@ -76,6 +76,9 @@ def build_atlas(
     Returns the page images and a manifest dict recording exactly where each
     sprite landed, so the packing never needs to be tracked by hand.
     """
+    names = [patch.name for patch in patches]
+    if len(set(names)) != len(names):
+        raise DoomWadError("Duplicate sprite names cannot be represented in an atlas")
     packer = ShelfPacker(size=atlas_size, padding=padding)
     items = [(p.name, p.image.width, p.image.height) for p in patches]
     placements = packer.pack(items)
@@ -202,6 +205,9 @@ def realign_sprites(
     if margin is None:
         margin = manifest.get("padding", DEFAULT_PADDING)
 
+    # Partition each shared gap at its midpoint using the original boxes.
+    # Snapshot bounds before mutating entries so results are order independent.
+    bounds = [dict(entry) for entry in manifest["sprites"]]
     results = []
     for entry in manifest["sprites"]:
         page = pages[entry["page"]]
@@ -212,6 +218,22 @@ def realign_sprites(
         search_top = max(0, y - margin)
         search_right = min(page_w, x + w + margin)
         search_bottom = min(page_h, y + h + margin)
+
+        for other in bounds:
+            if other["page"] != entry["page"] or other["name"] == entry["name"]:
+                continue
+            ox, oy = other["x"], other["y"]
+            right, bottom = ox + other["width"], oy + other["height"]
+            if oy < y + h and bottom > y:
+                if right <= x:
+                    search_left = max(search_left, (right + x) // 2)
+                elif ox >= x + w:
+                    search_right = min(search_right, (x + w + ox) // 2)
+            if ox < x + w and right > x:
+                if bottom <= y:
+                    search_top = max(search_top, (bottom + y) // 2)
+                elif oy >= y + h:
+                    search_bottom = min(search_bottom, (y + h + oy) // 2)
 
         region = page.crop((search_left, search_top, search_right, search_bottom))
         alpha = region.split()[-1]

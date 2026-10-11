@@ -79,12 +79,20 @@ def list_sprite_prefixes(wad: Wad) -> dict[str, list[str]]:
 
 
 def _lumps_in_sprite_range(wad: Wad) -> list[Lump]:
-    for start_name, end_name in _SPRITE_MARKER_PAIRS:
-        if start_name in wad and end_name in wad:
-            start = wad.index_of(start_name)
-            end = wad.index_of(end_name)
-            return wad.lumps[start + 1 : end]
-    return list(wad.lumps)
+    starts = {start for start, _ in _SPRITE_MARKER_PAIRS}
+    ends = {end for _, end in _SPRITE_MARKER_PAIRS}
+    candidates = []
+    active = False
+    found_range = False
+    for lump in wad.lumps:
+        if lump.name in starts:
+            active = True
+            found_range = True
+        elif lump.name in ends:
+            active = False
+        elif active:
+            candidates.append(lump)
+    return candidates if found_range else list(wad.lumps)
 
 
 def decode_patch(name: str, data: bytes, palette: Palette) -> DecodedPatch:
@@ -113,7 +121,11 @@ def decode_patch(name: str, data: bytes, palette: Palette) -> DecodedPatch:
             topdelta = data[offset]
             if topdelta == 0xFF:
                 break
+            if offset + 3 > len(data):
+                raise DoomWadError(f"Patch {name!r} column {col} has a truncated post header")
             length = data[offset + 1]
+            if offset + 3 + length + 1 > len(data):
+                raise DoomWadError(f"Patch {name!r} column {col} has truncated post data")
             pixel_offset = offset + 3
             for i in range(length):
                 index = data[pixel_offset + i]

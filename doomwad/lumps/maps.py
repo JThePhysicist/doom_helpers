@@ -54,7 +54,7 @@ class Thing:
 
 @dataclass
 class Linedef:
-    _FORMAT: ClassVar[str] = "<hhhhhhh"
+    _FORMAT: ClassVar[str] = "<HHHHHHH"
     _SIZE: ClassVar[int] = struct.calcsize(_FORMAT)
 
     start_vertex: int
@@ -67,7 +67,13 @@ class Linedef:
 
     @classmethod
     def list_from_bytes(cls, data: bytes) -> list["Linedef"]:
-        return [cls(*rec) for rec in struct.iter_unpack(cls._FORMAT, data)]
+        result = []
+        for rec in struct.iter_unpack(cls._FORMAT, data):
+            values = list(rec)
+            if values[-1] == 0xFFFF:
+                values[-1] = -1
+            result.append(cls(*values))
+        return result
 
     @classmethod
     def list_to_bytes(cls, linedefs: list["Linedef"]) -> bytes:
@@ -81,14 +87,14 @@ class Linedef:
                 ld.special,
                 ld.tag,
                 ld.front_sidedef,
-                ld.back_sidedef,
+                0xFFFF if ld.back_sidedef == -1 else ld.back_sidedef,
             )
         return bytes(buf)
 
 
 @dataclass
 class Sidedef:
-    _FORMAT: ClassVar[str] = "<hh8s8s8sh"
+    _FORMAT: ClassVar[str] = "<hh8s8s8sH"
     _SIZE: ClassVar[int] = struct.calcsize(_FORMAT)
 
     x_offset: int
