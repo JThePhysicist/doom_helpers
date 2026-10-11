@@ -18,6 +18,8 @@ def validate_manifest(manifest, pages=None):
     missing = required - manifest.keys()
     if missing:
         raise DoomWadError(f"Manifest missing fields: {', '.join(sorted(missing))}")
+    if manifest.get('patch_profile', 'vanilla') not in ('vanilla', 'source-port'):
+        raise DoomWadError('Unknown patch profile')
     _integer(manifest['version'], 'version', 1, 1)
     _integer(manifest['atlas_size'], 'atlas_size', 1, 32767)
     _integer(manifest['padding'], 'padding', 0)

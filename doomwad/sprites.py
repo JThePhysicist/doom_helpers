@@ -137,8 +137,10 @@ def update_sprite(wad: Wad, name: str, data: bytes, duplicate_policy: str = 'err
 
 
 def decode_patch(name: str, data: bytes, palette: Palette, *,
-                 max_pixels: int = 4_194_304) -> DecodedPatch:
+                 max_pixels: int = 4_194_304, profile: str = "vanilla") -> DecodedPatch:
     """Decode a Doom picture-format lump into an RGBA Pillow image."""
+    if profile not in ("vanilla", "source-port"):
+        raise DoomWadError("Patch profile must be vanilla or source-port")
     if len(data) < _HEADER_SIZE:
         raise DoomWadError(f"Patch {name!r} is too small to contain a header")
 
@@ -164,6 +166,7 @@ def decode_patch(name: str, data: bytes, palette: Palette, *,
 
     for col in range(width):
         offset = columnofs[col]
+        previous_top = -1
         while True:
             if offset >= len(data):
                 raise DoomWadError(f"Patch {name!r} column {col} runs off the end")
@@ -175,6 +178,9 @@ def decode_patch(name: str, data: bytes, palette: Palette, *,
             length = data[offset + 1]
             if offset + 3 + length + 1 > len(data):
                 raise DoomWadError(f"Patch {name!r} column {col} has truncated post data")
+            if profile == 'source-port' and topdelta <= previous_top:
+                topdelta += previous_top
+            previous_top = topdelta
             if topdelta + length > height:
                 raise DoomWadError(f"Patch {name!r} post extends beyond image height")
             pixel_offset = offset + 3
@@ -196,7 +202,7 @@ def encode_patch(
     top_offset: int,
     palette: Palette,
     alpha_threshold: int = _ALPHA_OPAQUE_THRESHOLD,
-    *, palette_indices: Image.Image | None = None,
+    *, palette_indices: Image.Image | None = None, profile: str = "vanilla",
 ) -> bytes:
     """Encode an RGBA Pillow image back into Doom picture-format lump bytes."""
     if image.mode != "RGBA":
@@ -204,7 +210,11 @@ def encode_patch(
     width, height = image.size
     if width <= 0 or height <= 0:
         raise ValueError(f"Cannot encode an image with size {width}x{height}")
-    if height > _MAX_PATCH_HEIGHT:
+    if profile not in ('vanilla', 'source-port'):
+        raise ValueError('Patch profile must be vanilla or source-port')
+    if width > 32767 or height > 32767:
+        raise ValueError('Patch dimensions must fit signed 16-bit fields')
+    if profile == 'vanilla' and height > _MAX_PATCH_HEIGHT:
         raise ValueError(
             f"Image height {height} exceeds the Doom picture format's limit "
             f"of {_MAX_PATCH_HEIGHT}px (single-byte post offsets)"
@@ -218,19 +228,31 @@ def encode_patch(
     for x in range(width):
         col = bytearray()
         y = 0
+        previous_top = -1
         while y < height:
             if pixels[x, y][3] < alpha_threshold:
                 y += 1
                 continue
             run_start = y
             run = bytearray()
-            while y < height and pixels[x, y][3] >= alpha_threshold:
+            while y < height and pixels[x, y][3] >= alpha_threshold and len(run) < 255:
                 r, g, b, _a = pixels[x, y]
                 original = palette_indices.getpixel((x, y)) if palette_indices is not None else None
                 index = original if original is not None and palette.rgb(original) == (r,g,b) else palette.nearest_index((r,g,b))
                 run.append(index)
                 y += 1
-            col += bytes([run_start, len(run), 0]) + bytes(run) + bytes([0])
+            if profile == 'source-port' and run_start > 254:
+                if previous_top < 254:
+                    col += bytes([254, 0, 0, 0])
+                    previous_top = 254
+                while run_start - previous_top > 254:
+                    col += bytes([254, 0, 0, 0])
+                    previous_top += 254
+                delta = run_start - previous_top
+            else:
+                delta = run_start
+            col += bytes([delta, len(run), 0]) + bytes(run) + bytes([0])
+            previous_top = run_start
         col.append(0xFF)
         column_bytes.append(bytes(col))
 

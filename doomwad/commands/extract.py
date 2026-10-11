@@ -53,6 +53,7 @@ def configure_parser(parser):
         "--padding", type=int, default=DEFAULT_PADDING, help="Pixels of spacing between tiles"
     )
     parser.add_argument("--overwrite", action="store_true", help="Replace existing atlas files")
+    parser.add_argument("--profile", choices=["vanilla", "source-port"], default="vanilla")
     parser.add_argument("--palette-index", type=int, default=0)
     parser.add_argument("--preserve-indices", action="store_true")
     parser.add_argument("--duplicates", choices=["error", "first", "last"], default="error")
@@ -75,12 +76,13 @@ def run(args, parser):
     if not lumps:
         parser.error(f"No sprites found matching: {', '.join(args.sprites)}")
 
-    patches = [decode_patch(lump.name, lump.data, palette) for lump in lumps]
+    patches = [decode_patch(lump.name, lump.data, palette, profile=args.profile) for lump in lumps]
 
     pages, manifest = build_atlas(
         patches, palette, atlas_size=args.atlas_size, padding=args.padding, preserve_indices=args.preserve_indices
     )
 
+    manifest["patch_profile"] = args.profile
     asset_name = "_".join(args.sprites)
     output_dir = args.output_dir or f"{asset_name}_atlas"
     page_paths, manifest_path = save_atlas(pages, manifest, output_dir, asset_name, overwrite=args.overwrite)

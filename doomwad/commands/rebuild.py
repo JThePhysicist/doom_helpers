@@ -37,6 +37,7 @@ def configure_parser(parser):
     )
     parser.add_argument("--output", required=True, help="Path to write the resulting PWAD to")
     parser.add_argument("--overwrite", action="store_true", help="Replace the output WAD if it exists")
+    parser.add_argument("--profile", choices=["vanilla", "source-port"])
     parser.add_argument("--duplicates", choices=["error", "first", "last"], default="error")
 
 
@@ -53,7 +54,7 @@ def run(args, parser):
 
     count = 0
     for name, image, left_offset, top_offset in iter_manifest_sprites(manifest, pages):
-        data = encode_patch(image, left_offset, top_offset, palette, palette_indices=image.info.get("palette_indices"))
+        data = encode_patch(image, left_offset, top_offset, palette, palette_indices=image.info.get("palette_indices"), profile=args.profile or manifest.get("patch_profile", "vanilla"))
         update_sprite(wad, name, data, args.duplicates)
         count += 1
 
