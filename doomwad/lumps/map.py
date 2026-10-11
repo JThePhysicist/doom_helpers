@@ -1,9 +1,10 @@
 """Map-scoped standard Doom editing. Node generation delegates to external tools."""
 from pathlib import Path
 import subprocess
+import struct
 import tempfile
 
-from .maps import Thing, Linedef, Sidedef, Vertex, Sector, is_map_marker
+from .maps import Thing, Linedef, Sidedef, Vertex, Sector, is_map_marker, MAP_LUMP_NAMES
 from ..exceptions import DoomWadError
 
 RECORDS={'THINGS':Thing,'LINEDEFS':Linedef,'SIDEDEFS':Sidedef,'VERTEXES':Vertex,'SECTORS':Sector}
@@ -33,7 +34,7 @@ class DoomMap:
     def records(self,name):
         if name not in RECORDS: raise DoomWadError(f'Unsupported map record {name}')
         try: return RECORDS[name].list_from_bytes(self.lump(name).data)
-        except (ValueError, __import__('struct').error) as exc:
+        except (ValueError, struct.error) as exc:
             raise DoomWadError(f'Invalid {name} records in {self.name}: {exc}') from exc
 
     def replace_records(self,name,records):
@@ -74,7 +75,8 @@ class DoomMap:
             subprocess.run([arg.replace('{wad}',str(path)) for arg in command],check=True)
             rebuilt=Wad.load(path)
             replacement=DoomMap(rebuilt,self.name);replacement.validate()
-            generated={name:replacement.lump(name).data for name in GENERATED}
-            for name in GENERATED: self.lump(name)  # validate target before mutation
-            for name,data in generated.items(): self.lump(name).data=data
+            # Builders may add split vertices as well as regenerate derived data.
+            regenerated={name:replacement.lump(name).data for name in MAP_LUMP_NAMES}
+            for name in MAP_LUMP_NAMES: self.lump(name)  # validate target before mutation
+            for name,data in regenerated.items(): self.lump(name).data=data
         self.geometry_dirty=False

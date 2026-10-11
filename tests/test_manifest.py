@@ -38,3 +38,14 @@ def test_save_validates_before_writing(tmp_path):
     manifest['sprites'][0]['x'] = 8
     with pytest.raises(DoomWadError): save_atlas(pages, manifest, tmp_path / 'output', 'TROO')
     assert not (tmp_path / 'output').exists()
+
+
+def test_index_filenames_cannot_alias_color_pages(manifest):
+    manifest['index_pages']=manifest['pages'][:]
+    with pytest.raises(DoomWadError,match='distinct'): validate_manifest(manifest)
+
+
+def test_loaded_pages_are_budget_checked_before_opening(tmp_path,manifest):
+    from doomwad.atlas import load_atlas_pages
+    with pytest.raises(DoomWadError,match='pixel budget'):
+        load_atlas_pages(manifest,tmp_path,max_pixels=1)

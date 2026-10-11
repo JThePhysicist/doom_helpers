@@ -48,6 +48,7 @@ def allocate_regions(manifest):
             else:
                 top = max(top, (oy+oh+y)//2)
         entry['allocation'] = [left, top, right-left, bottom-top]
+    validate_manifest(manifest)
     return manifest
 
 
@@ -111,7 +112,7 @@ def build_atlas(
     palette: Palette,
     atlas_size: int = DEFAULT_ATLAS_SIZE,
     padding: int = DEFAULT_PADDING,
-    *, preserve_indices: bool = False,
+    *, preserve_indices: bool = False, max_pixels: int = 64_000_000,
 ) -> tuple[list[Image.Image], dict]:
     """Pack decoded sprite patches onto 1..N square pages of `atlas_size`.
 
@@ -125,6 +126,8 @@ def build_atlas(
     items = [(p.name, p.image.width, p.image.height) for p in patches]
     placements = packer.pack(items)
 
+    if type(max_pixels) is not int or max_pixels <= 0 or packer.page_count * atlas_size * atlas_size > max_pixels:
+        raise DoomWadError('Atlas pages exceed configured pixel budget')
     pages = [
         Image.new("RGBA", (atlas_size, atlas_size), (0, 0, 0, 0))
         for _ in range(packer.page_count)
@@ -210,15 +213,22 @@ def load_manifest(path: str | Path) -> dict:
         raise DoomWadError(f"Invalid manifest JSON: {exc}") from exc
 
 
-def load_atlas_pages(manifest: dict, atlas_dir: str | Path) -> list[Image.Image]:
+def load_atlas_pages(manifest: dict, atlas_dir: str | Path, *, max_pixels: int = 64_000_000) -> list[Image.Image]:
     validate_manifest(manifest)
+    if type(max_pixels) is not int or max_pixels <= 0 or len(manifest['pages']) * manifest['atlas_size'] ** 2 > max_pixels:
+        raise DoomWadError('Atlas pages exceed configured pixel budget')
     atlas_dir = Path(atlas_dir)
     pages = []
     for filename in manifest["pages"]:
         page_path = atlas_dir / filename
         if not page_path.exists():
             raise DoomWadError(f"Atlas page {page_path} referenced by manifest is missing")
-        pages.append(Image.open(page_path).convert("RGBA"))
+        with Image.open(page_path) as page:
+            if page.size != (manifest['atlas_size'], manifest['atlas_size']):
+                raise DoomWadError('Atlas page dimensions do not match manifest atlas_size')
+            converted = page.convert('RGBA')
+            converted.info.pop('palette_indices', None)
+            pages.append(converted)
     if 'index_pages' in manifest:
         for page, filename in zip(pages, manifest['index_pages']):
             with Image.open(atlas_dir / filename) as indices:
@@ -287,8 +297,6 @@ def realign_sprites(
     if margin is not None and not any('allocation' in e for e in manifest['sprites']):
         # Legacy manifests can choose their initial allocation margin once.
         allocate_regions(dict(manifest, padding=margin))
-    if margin is None:
-        margin = manifest.get("padding", DEFAULT_PADDING)
 
     allocate_regions(manifest)
     results = []
@@ -300,6 +308,11 @@ def realign_sprites(
         search_left, search_top, search_w, search_h = entry['allocation']
         search_right = search_left + search_w
         search_bottom = search_top + search_h
+        if margin is not None:
+            search_left = max(search_left, x-margin)
+            search_top = max(search_top, y-margin)
+            search_right = min(search_right, x+w+margin)
+            search_bottom = min(search_bottom, y+h+margin)
         region = page.crop((search_left, search_top, search_right, search_bottom))
         alpha = region.split()[-1]
         mask = alpha.point(lambda a, t=alpha_threshold: 255 if a >= t else 0)
@@ -331,7 +344,7 @@ def realign_sprites(
         if bx0 == 0 or by0 == 0 or bx1 == region.width or by1 == region.height:
             warning = (
                 f"{entry['name']!r} content touches the edge of its search area "
-                f"({margin}px margin) -- it may be clipped; re-extract with more "
+                "-- it may be clipped; re-extract with more "
                 "padding or shrink the artwork to fit"
             )
 

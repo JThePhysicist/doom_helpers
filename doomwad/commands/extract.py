@@ -54,6 +54,7 @@ def configure_parser(parser):
         "--padding", type=int, default=DEFAULT_PADDING, help="Pixels of spacing between tiles"
     )
     parser.add_argument("--overwrite", action="store_true", help="Replace existing atlas files")
+    parser.add_argument("--max-pixels", type=int, default=64_000_000, help="Total decoded/atlas pixel budget")
     parser.add_argument("--profile", choices=["vanilla", "source-port"], default="vanilla")
     parser.add_argument("--palette-index", type=int, default=0)
     parser.add_argument("--preserve-indices", action="store_true")
@@ -77,10 +78,18 @@ def run(args, parser):
     if not lumps:
         parser.error(f"No sprites found matching: {', '.join(args.sprites)}")
 
-    patches = [decode_patch(lump.name, lump.data, palette, profile=args.profile) for lump in lumps]
+    if args.max_pixels <= 0:
+        raise DoomWadError('Pixel budget must be positive')
+    patches = []
+    remaining = args.max_pixels
+    for lump in lumps:
+        patch = decode_patch(lump.name, lump.data, palette, profile=args.profile,
+                             max_pixels=min(4_194_304, remaining))
+        patches.append(patch)
+        remaining -= patch.image.width * patch.image.height
 
     pages, manifest = build_atlas(
-        patches, palette, atlas_size=args.atlas_size, padding=args.padding, preserve_indices=args.preserve_indices
+        patches, palette, atlas_size=args.atlas_size, padding=args.padding, preserve_indices=args.preserve_indices, max_pixels=args.max_pixels
     )
 
     manifest["patch_profile"] = args.profile

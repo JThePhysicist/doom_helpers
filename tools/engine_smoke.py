@@ -34,12 +34,15 @@ def run_smoke(engine,iwad,timeout=60):
         path=Path(directory);mod=path/'checker.wad';build_fixture(iwad,mod)
         demo=path/'smoke.lmp'
         demo.write_bytes(bytes([109,2,1,1,0,0,0,1,0,1,0,0,0])+bytes(4*105)+bytes([128]))
-        env=dict(os.environ,SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy')
+        env=dict(os.environ,SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy',
+                 XDG_CONFIG_HOME=str(path/'config'),XDG_DATA_HOME=str(path/'data'))
         result=subprocess.run([engine,'-iwad',str(Path(iwad).resolve()),'-file',str(mod),
                                '-timedemo',str(demo),'-nosound','-nodraw'],cwd=directory,
                               env=env,capture_output=True,text=True,timeout=timeout)
         output=result.stdout+'\n'+result.stderr
-        if result.returncode or not re.search(r'105\s+gametics',output):
+        # Chocolate Doom 3.1 ends a successful timedemo via I_Error/exit(-1).
+        # Only accept that exit with its exact documented completion record.
+        if result.returncode not in (0, 255, -1) or not re.search(r'timed 105 gametics in \d+ realtics',output):
             raise RuntimeError(f'Engine did not complete the 105-tic demo (exit {result.returncode}):\n{output}')
         print('Chocolate Doom completed 105 gametics with the generated sprite PWAD')
 

@@ -7,6 +7,8 @@ A Python library and CLI for reading and editing Doom WAD files.
 - [C4 architecture](docs/architecture.html) — open the HTML file in a browser.
 - [End-to-end user guide](docs/user-guide.md)
 - [Feature gaps and improvement opportunities](docs/feature-gaps.md)
+- [Implementation status](docs/implementation-status.md)
+- [Release and manifest compatibility policy](docs/releases.md)
 
 ## Project layout
 
@@ -72,11 +74,11 @@ none of that has to be tracked by hand or encoded into the image itself.
 
 ```bash
 # PWADs usually don't carry PLAYPAL, so point at the IWAD for the palette
-python scripts/extract_sprite_atlas.py \
+doomwad atlas extract \
     --wad DOOM2.WAD --sprite TROO --output-dir atlases/troo
 
 # pack several sprites' frames into the same atlas set
-python scripts/extract_sprite_atlas.py \
+doomwad atlas extract \
     --wad DOOM2.WAD --sprite TROO --sprite SARG --output-dir atlases/monsters
 ```
 
@@ -92,10 +94,10 @@ only the manifest's bookkeeping (`x`/`y`/`width`/`height`/offsets) is
 updated. Run it before rebuilding:
 
 ```bash
-python scripts/realign_sprite_atlas.py --manifest atlases/troo/TROO_manifest.json
+doomwad atlas realign --manifest atlases/troo/TROO_manifest.json
 
 # preview what would change without writing the manifest
-python scripts/realign_sprite_atlas.py --manifest atlases/troo/TROO_manifest.json --dry-run
+doomwad atlas realign --manifest atlases/troo/TROO_manifest.json --dry-run
 ```
 
 If a sprite's redrawn content touches the edge of the scanned margin, the
@@ -111,17 +113,19 @@ picture-format lump with the manifest's embedded palette, and writes the
 lumps into a PWAD (or updates an existing WAD's matching lumps in place).
 
 ```bash
-python scripts/rebuild_sprite_atlas.py \
+doomwad atlas rebuild \
     --manifest atlases/troo/TROO_manifest.json --output mymod.wad
 
 # update lumps in an existing pwad instead of starting a fresh one
-python scripts/rebuild_sprite_atlas.py \
-    --manifest atlases/troo/TROO_manifest.json --wad mymod.wad --output mymod.wad
+doomwad atlas rebuild \
+    --manifest atlases/troo/TROO_manifest.json --wad mymod.wad --output mymod.wad --overwrite
 ```
 
 The full pipeline: `extract_sprite_atlas.py` -> hand-edit the PNGs ->
 `realign_sprite_atlas.py` -> `rebuild_sprite_atlas.py`. The current encoder supports images up to 255px tall and does not implement
-source-port tall-patch extensions.
+source-port tall-patch extensions by default. Select `--profile source-port`
+for tall patches in compatible engines. Extraction/rebuilding require
+`--overwrite` to replace existing output files. Legacy scripts remain wrappers.
 
 ## Tests
 

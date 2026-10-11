@@ -37,3 +37,25 @@ def test_bad_references_and_stale_geometry_block_save(tmp_path):
 def test_other_map_formats_are_explicitly_rejected(format_lump):
     wad=fixture();wad.insert(1,format_lump,b'')
     with pytest.raises(DoomWadError): DoomMap(wad,'MAP01')
+
+
+def test_node_builder_imports_added_vertices_and_preserves_state_on_failure(tmp_path,monkeypatch):
+    import subprocess
+    import doomwad.lumps.map as module
+    map=DoomMap(fixture(),'MAP01')
+    map.replace_records('VERTEXES',[Vertex(0,0),Vertex(20,0)])
+    def builder(command,check):
+        wad=Wad.load(command[-1]);result=DoomMap(wad,'MAP01')
+        result.lump('VERTEXES').data=Vertex.list_to_bytes([Vertex(0,0),Vertex(20,0),Vertex(10,0)])
+        for name in module.GENERATED: result.lump(name).data=b'regenerated'
+        wad.save(command[-1])
+    monkeypatch.setattr(module.subprocess,'run',builder)
+    map.rebuild_nodes(['builder','{wad}'])
+    assert len(map.records('VERTEXES'))==3 and not map.geometry_dirty
+    map.save(tmp_path/'output.wad')
+    map.replace_records('VERTEXES',[Vertex(0,0),Vertex(20,0),Vertex(10,0)])
+    before=map.wad.to_bytes()
+    def fail(command,check): raise subprocess.CalledProcessError(1,command)
+    monkeypatch.setattr(module.subprocess,'run',fail)
+    with pytest.raises(subprocess.CalledProcessError): map.rebuild_nodes(['builder','{wad}'])
+    assert map.geometry_dirty and map.wad.to_bytes()==before

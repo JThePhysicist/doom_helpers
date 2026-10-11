@@ -16,6 +16,7 @@ class LazyLump:
     @property
     def data(self):
         if self.reader.closed: raise ValueError('WAD reader is closed')
+        if self.size == 0: return b''
         self.reader._stream.seek(self.offset)
         data=self.reader._stream.read(self.size)
         if len(data)!=self.size: raise InvalidWadError('WAD changed or was truncated during reading')

@@ -41,7 +41,7 @@ def main():
         else:
             subprocess.run([sys.executable,'-m','build','--wheel','--outdir',str(work/'dist')],cwd=repo,check=True)
             wheel=next((work/'dist').glob('*.whl'))
-        venv.EnvBuilder(with_pip=True).create(work/'venv')
+        venv.EnvBuilder(with_pip=True, symlinks=os.name != "nt").create(work/'venv')
         python=work/'venv'/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
         env=dict(os.environ);env.pop('PYTHONPATH',None)
         subprocess.run([str(python),'-m','pip','install',str(wheel)],cwd=work,env=env,check=True)

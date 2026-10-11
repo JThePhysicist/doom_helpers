@@ -17,3 +17,11 @@ def test_lazy_reader_detects_post_open_truncation_and_limits(tmp_path):
     with WadReader(path) as reader:
         path.write_bytes(b'')
         with pytest.raises(DoomWadError): _=reader.find('ONE').data
+
+
+def test_zero_size_marker_does_not_seek_arbitrary_offset(tmp_path):
+    import struct
+    path=tmp_path/'marker.wad'
+    path.write_bytes(struct.pack('<4sii',b'PWAD',1,12)+struct.pack('<ii8s',-1,0,b'MARKER'))
+    with WadReader(path) as reader:
+        assert reader.find('MARKER').data==Wad.load(path).find('MARKER').data==b''

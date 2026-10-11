@@ -13,14 +13,18 @@ python tools/engine_smoke.py --iwad /path/to/freedoom2.wad --engine chocolate-do
 ```
 
 The test builds a PWAD replacing every source TROO frame, starts Chocolate Doom
-with dummy video/audio drivers, and requires successful completion of exactly
-105 game tics. Timeouts, engine errors, or a missing completion count fail the
+with dummy video/audio drivers, and requires the exact timedemo completion record
+for 105 game tics. Chocolate Doom 3.1 ends successful timedemos through `I_Error`,
+which exits with status 255 on Linux; the harness accepts that status only with
+the matching completion record. See upstream [g_game.c](https://github.com/chocolate-doom/chocolate-doom/blob/chocolate-doom-3.1.0/src/doom/g_game.c)
+and [i_system.c](https://github.com/chocolate-doom/chocolate-doom/blob/chocolate-doom-3.1.0/src/i_system.c). Timeouts, engine errors, or a missing completion count fail the
 check. This verifies loading and execution, not visual correctness. Inspect the
 artwork and anchors interactively as described in the user guide.
 
 This optional check is separate from pytest and requires an external engine and
-IWAD. It has not been executed in the onboarding environment because neither is
-installed. A vanilla-compatible complete sprite set is used rather than assuming
+IWAD. It passed in the cloud environment using Chocolate Doom 3.1.0 and Freedoom
+Phase 2 0.13.0, installed in an isolated workspace from Debian
+signature-verified package indexes and checksum-verified archives. A vanilla-compatible complete sprite set is used rather than assuming
 that a subset replacement works in older engines. Source-port tall patches need
 separate engine-specific visual tests; the codec unit tests do not establish
 support in every engine.

@@ -21,7 +21,7 @@ def preview_html(manifest, pages, baseline=None):
     if baseline is not None:
         original = {name:image for name,image,_,_ in iter_manifest_sprites(*baseline)}
     parts=['<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>doomwad atlas preview</title>',
-           '<style>body{font:16px system-ui;max-width:1100px;margin:30px auto;padding:16px;background:#f5f7fb;color:#182c42}svg{width:100%;background:#ddd}img{image-rendering:pixelated;max-width:100%}article{display:inline-block;vertical-align:top;padding:16px;margin:8px;background:white;border:1px solid #bbb}button{margin:5px}.overlay[hidden]{display:none}.swatch{display:inline-block;width:22px;height:22px}table{border-collapse:collapse}td,th{padding:6px;border:1px solid #bbb}</style>',
+           '<style>body{font:16px system-ui;max-width:1100px;margin:30px auto;padding:16px;background:#f5f7fb;color:#182c42}svg{width:100%}svg,img{background:repeating-conic-gradient(#ddd 0% 25%,#fff 0% 50%) 0 0/16px 16px}img{image-rendering:pixelated;max-width:100%}article{display:inline-block;vertical-align:top;padding:16px;margin:8px;background:white;border:1px solid #bbb}button{margin:5px}.overlay[hidden]{display:none}.swatch{display:inline-block;width:22px;height:22px}table{border-collapse:collapse}td,th{padding:6px;border:1px solid #bbb}</style>',
            '<h1>Atlas preview</h1><p>Read-only: this document changes no WAD, PNG, or manifest files. Cyan: crop bounds. Orange: editing allocation. Red: anchor. Transparent pixels use a checkerboard.</p>',
            '<button onclick="document.querySelectorAll(\'.overlay\').forEach(e=>e.hidden=!e.hidden)">Toggle overlays</button>']
     for i,page in enumerate(pages):
@@ -35,7 +35,8 @@ def preview_html(manifest, pages, baseline=None):
         parts.append('</svg>')
     parts.append('<h2>Sprites</h2><p>Eight-character names may share one patch across two mirrored frame/rotation uses; names are preserved exactly.</p>')
     for name,image,left,top in iter_manifest_sprites(manifest,pages):
-        parts.append(f'<article><h3>{html.escape(name)}</h3><img alt="{html.escape(name,quote=True)}" src="{_image(image)}"><p>{image.width}×{image.height}; anchor ({left}, {top})</p>')
+        opaque_bounds=image.getchannel('A').point(lambda a:255 if a>=128 else 0).getbbox()
+        parts.append(f'<article><h3>{html.escape(name)}</h3><img alt="{html.escape(name,quote=True)}" src="{_image(image)}"><p>{image.width}×{image.height}; anchor ({left}, {top}); opaque bounds {opaque_bounds}</p>')
         if name in original:
             before=original[name]
             if before.size!=image.size: parts.append('<p>Baseline dimensions differ.</p>')

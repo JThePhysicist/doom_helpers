@@ -29,3 +29,14 @@ def test_diagonal_and_repeated_edits_keep_stable_bounds():
     assert manifest['sprites'][0]['x'] == 2
     assert manifest['sprites'][1]['x'] == 9
     validate_manifest(manifest)
+
+
+def test_explicit_margin_is_limited_to_stable_allocation(manifest):
+    page=Image.new('RGBA',(8,8));page.putpixel((0,0),(0,0,0,255));page.putpixel((4,0),(0,0,0,255))
+    allocate_regions(manifest)
+    allocation=manifest['sprites'][0]['allocation'][:]
+    realign_sprites(manifest,[page],margin=0)
+    assert manifest['sprites'][0]['width']==1
+    assert manifest['sprites'][0]['allocation']==allocation
+    realign_sprites(manifest,[page])
+    assert manifest['sprites'][0]['width']==5
