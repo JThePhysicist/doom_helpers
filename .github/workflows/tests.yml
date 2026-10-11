@@ -24,6 +24,4 @@ jobs:
           name: coverage-${{ matrix.python }}
           path: coverage.xml
       - run: uv build --out-dir dist
-      - run: uv venv /tmp/doomwad-wheel --python python --no-managed-python
-      - run: uv pip install --python /tmp/doomwad-wheel/bin/python dist/*.whl
-      - run: cd /tmp && /tmp/doomwad-wheel/bin/doomwad atlas --help
+      - run: uv run --no-sync python tools/check_wheel.py --wheel dist/doomwad-*.whl
