@@ -75,8 +75,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_atlas = subparsers.add_parser('atlas', help='Extract, realign, and rebuild sprite atlases')
     atlas_commands = p_atlas.add_subparsers(dest='atlas_command', required=True)
-    from .commands import extract, realign, rebuild
-    for name, module in [('extract', extract), ('realign', realign), ('rebuild', rebuild)]:
+    from .commands import extract, realign, rebuild, preview
+    for name, module in [('extract', extract), ('realign', realign), ('rebuild', rebuild), ('preview', preview)]:
         child = atlas_commands.add_parser(name, description=module.__doc__)
         module.configure_parser(child)
         child.set_defaults(func=lambda args, module=module, child=child: module.run(args, child))
