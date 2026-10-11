@@ -29,7 +29,18 @@ class Wad:
         if Path(path).stat().st_size > max_bytes:
             raise InvalidWadError("WAD exceeds configured byte limit")
         with Path(path).open('rb') as stream:
-            data = stream.read(max_bytes + 1)
+            # Incremental reads avoid preallocating the configured maximum.
+            chunks = []
+            total = 0
+            while True:
+                chunk = stream.read(min(1024 * 1024, max_bytes + 1 - total))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > max_bytes:
+                    raise InvalidWadError('WAD exceeds configured byte limit')
+            data = b''.join(chunks)
         if len(data) > max_bytes:
             raise InvalidWadError("WAD exceeds configured byte limit")
         return cls.from_bytes(data, max_lumps=max_lumps)
