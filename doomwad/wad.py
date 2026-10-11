@@ -6,6 +6,7 @@ from typing import Iterator
 
 from .exceptions import InvalidWadError, LumpNotFoundError
 from .lump import Lump
+from .storage import atomic_write
 
 _HEADER_FORMAT = "<4sii"
 _HEADER_SIZE = struct.calcsize(_HEADER_FORMAT)
@@ -90,7 +91,7 @@ class Wad:
         return bytes(header) + bytes(body) + bytes(directory)
 
     def save(self, path: str | Path) -> None:
-        Path(path).write_bytes(self.to_bytes())
+        atomic_write(path, self.to_bytes())
 
     def find(self, name: str) -> Lump:
         for lump in self.lumps:

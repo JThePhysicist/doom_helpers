@@ -23,6 +23,7 @@ from doomwad.atlas import iter_manifest_sprites, load_atlas_pages, load_manifest
 from doomwad.palette import Palette
 from doomwad.sprites import encode_patch
 from doomwad.wad import Wad
+from doomwad.storage import atomic_write
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         "appended otherwise). If omitted, a fresh PWAD is created.",
     )
     parser.add_argument("--output", required=True, help="Path to write the resulting PWAD to")
+    parser.add_argument("--overwrite", action="store_true", help="Replace the output WAD if it exists")
     args = parser.parse_args(argv)
 
     manifest_path = Path(args.manifest)
@@ -68,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
                 wad.add("S_END", b"")
         count += 1
 
-    wad.save(args.output)
+    atomic_write(args.output, wad.to_bytes(), overwrite=args.overwrite)
     print(f"Wrote {count} sprite(s) to {args.output}")
     return 0
 

@@ -57,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--padding", type=int, default=DEFAULT_PADDING, help="Pixels of spacing between tiles"
     )
+    parser.add_argument("--overwrite", action="store_true", help="Replace existing atlas files")
     args = parser.parse_args(argv)
 
     wad = Wad.load(args.wad)
@@ -82,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
 
     asset_name = "_".join(args.sprites)
     output_dir = args.output_dir or f"{asset_name}_atlas"
-    page_paths, manifest_path = save_atlas(pages, manifest, output_dir, asset_name)
+    page_paths, manifest_path = save_atlas(pages, manifest, output_dir, asset_name, overwrite=args.overwrite)
 
     print(f"Extracted {len(patches)} sprite(s) across {len(page_paths)} page(s):")
     for path in page_paths:

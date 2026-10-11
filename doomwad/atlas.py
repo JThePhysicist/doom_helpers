@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -10,6 +11,7 @@ from PIL import Image
 from .exceptions import DoomWadError
 from .palette import Palette
 from .manifest import validate_manifest
+from .storage import atomic_batch
 from .sprites import DecodedPatch
 
 MANIFEST_VERSION = 1
@@ -152,7 +154,8 @@ def build_atlas(
 
 
 def save_atlas(
-    pages: list[Image.Image], manifest: dict, output_dir: str | Path, asset_name: str
+    pages: list[Image.Image], manifest: dict, output_dir: str | Path, asset_name: str,
+    *, overwrite: bool = False
 ) -> tuple[list[Path], Path]:
     """Write atlas page PNGs and the manifest JSON to `output_dir`."""
     filenames = [f"{asset_name}_{i}.png" for i in range(len(pages))]
@@ -162,16 +165,20 @@ def save_atlas(
 
     page_paths = []
     page_filenames = []
+    outputs = []
     for i, page in enumerate(pages):
         filename = f"{asset_name}_{i}.png"
         path = output_dir / filename
-        page.save(path)
+        encoded = BytesIO()
+        page.save(encoded, format="PNG")
+        outputs.append((path, encoded.getvalue()))
         page_paths.append(path)
         page_filenames.append(filename)
 
     manifest = dict(manifest, pages=page_filenames)
     manifest_path = output_dir / f"{asset_name}_manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2))
+    outputs.append((manifest_path, json.dumps(manifest, indent=2).encode()))
+    atomic_batch(outputs, overwrite=overwrite)
 
     return page_paths, manifest_path
 

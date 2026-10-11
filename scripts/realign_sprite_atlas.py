@@ -32,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from doomwad.storage import atomic_write
 from doomwad.atlas import load_atlas_pages, load_manifest, realign_sprites
 
 
@@ -91,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     output_path = Path(args.output) if args.output else manifest_path
-    output_path.write_text(json.dumps(manifest, indent=2))
+    atomic_write(output_path, json.dumps(manifest, indent=2).encode())
     print(f"Wrote {output_path}")
     return 0
 
