@@ -21,7 +21,7 @@ def preview_html(manifest, pages, baseline=None):
     if baseline is not None:
         original = {name:image for name,image,_,_ in iter_manifest_sprites(*baseline)}
     parts=['<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>doomwad atlas preview</title>',
-           '<style>body{font:16px system-ui;max-width:1100px;margin:30px auto;padding:16px;background:#f5f7fb;color:#182c42}svg{width:100%;background:#ddd}img{image-rendering:pixelated;max-width:100%}article{display:inline-block;vertical-align:top;padding:16px;margin:8px;background:white;border:1px solid #bbb}button{margin:5px}.swatch{display:inline-block;width:22px;height:22px}table{border-collapse:collapse}td,th{padding:6px;border:1px solid #bbb}</style>',
+           '<style>body{font:16px system-ui;max-width:1100px;margin:30px auto;padding:16px;background:#f5f7fb;color:#182c42}svg{width:100%;background:#ddd}img{image-rendering:pixelated;max-width:100%}article{display:inline-block;vertical-align:top;padding:16px;margin:8px;background:white;border:1px solid #bbb}button{margin:5px}.overlay[hidden]{display:none}.swatch{display:inline-block;width:22px;height:22px}table{border-collapse:collapse}td,th{padding:6px;border:1px solid #bbb}</style>',
            '<h1>Atlas preview</h1><p>Read-only: this document changes no WAD, PNG, or manifest files. Cyan: crop bounds. Orange: editing allocation. Red: anchor. Transparent pixels use a checkerboard.</p>',
            '<button onclick="document.querySelectorAll(\'.overlay\').forEach(e=>e.hidden=!e.hidden)">Toggle overlays</button>']
     for i,page in enumerate(pages):
@@ -41,7 +41,8 @@ def preview_html(manifest, pages, baseline=None):
             if before.size!=image.size: parts.append('<p>Baseline dimensions differ.</p>')
             else:
                 diff=ImageChops.difference(before,image)
-                changed=sum(any(pixel) for pixel in diff.getdata())
+                raw=diff.tobytes()
+                changed=sum(any(raw[i:i+4]) for i in range(0,len(raw),4))
                 parts.append(f'<p>{changed} changed pixels vs baseline</p><img alt="Pixel difference" src="{_image(diff.convert("RGB"))}">')
         parts.append('</article>')
     parts.append('<h2>Embedded palette</h2>')

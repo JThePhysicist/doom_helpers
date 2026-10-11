@@ -10,3 +10,7 @@ venv/
 !tests/**/*.wad
 
 .hypothesis/
+
+.coverage
+coverage.xml
+htmlcov/
