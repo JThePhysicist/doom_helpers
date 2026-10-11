@@ -17,6 +17,38 @@ DEFAULT_ATLAS_SIZE = 1024
 DEFAULT_PADDING = 2
 
 
+def allocate_regions(manifest):
+    """Assign disjoint immutable search rectangles, including diagonal neighbors."""
+    size = manifest['atlas_size']
+    margin = manifest['padding']
+    entries = manifest['sprites']
+    for entry in entries:
+        if 'allocation' in entry:
+            continue
+        x, y, w, h = (entry[k] for k in ('x', 'y', 'width', 'height'))
+        left, top = max(0, x-margin), max(0, y-margin)
+        right, bottom = min(size, x+w+margin), min(size, y+h+margin)
+        for other in entries:
+            if other is entry or other['page'] != entry['page']:
+                continue
+            ox, oy, ow, oh = (other[k] for k in ('x', 'y', 'width', 'height'))
+            gx = max(ox-(x+w), x-(ox+ow))
+            gy = max(oy-(y+h), y-(oy+oh))
+            if gx < 0 and gy < 0:
+                raise DoomWadError('Overlapping sprite tiles cannot receive editing regions')
+            if gx >= gy:
+                if ox >= x+w:
+                    right = min(right, (x+w+ox)//2)
+                else:
+                    left = max(left, (ox+ow+x)//2)
+            elif oy >= y+h:
+                bottom = min(bottom, (y+h+oy)//2)
+            else:
+                top = max(top, (oy+oh+y)//2)
+        entry['allocation'] = [left, top, right-left, bottom-top]
+    return manifest
+
+
 class Placement(NamedTuple):
     name: str
     page: int
@@ -115,6 +147,7 @@ def build_atlas(
         "pages": [f"page_{i}.png" for i in range(len(pages))],  # renamed by save_atlas
         "sprites": sprite_entries,
     }
+    allocate_regions(manifest)
     return pages, manifest
 
 
@@ -212,39 +245,26 @@ def realign_sprites(
     anything that looks like it spilled past its allotted space.
     """
     validate_manifest(manifest, pages)
+    if margin is not None and (type(margin) is not int or margin < 0):
+        raise DoomWadError("Realignment margin must be a nonnegative integer")
+    if type(alpha_threshold) is not int or not 0 <= alpha_threshold <= 255:
+        raise DoomWadError("Alpha threshold must be between 0 and 255")
+    if margin is not None and not any('allocation' in e for e in manifest['sprites']):
+        # Legacy manifests can choose their initial allocation margin once.
+        allocate_regions(dict(manifest, padding=margin))
     if margin is None:
         margin = manifest.get("padding", DEFAULT_PADDING)
 
-    # Partition each shared gap at its midpoint using the original boxes.
-    # Snapshot bounds before mutating entries so results are order independent.
-    bounds = [dict(entry) for entry in manifest["sprites"]]
+    allocate_regions(manifest)
     results = []
     for entry in manifest["sprites"]:
         page = pages[entry["page"]]
         page_w, page_h = page.size
         x, y, w, h = entry["x"], entry["y"], entry["width"], entry["height"]
 
-        search_left = max(0, x - margin)
-        search_top = max(0, y - margin)
-        search_right = min(page_w, x + w + margin)
-        search_bottom = min(page_h, y + h + margin)
-
-        for other in bounds:
-            if other["page"] != entry["page"] or other["name"] == entry["name"]:
-                continue
-            ox, oy = other["x"], other["y"]
-            right, bottom = ox + other["width"], oy + other["height"]
-            if oy < y + h and bottom > y:
-                if right <= x:
-                    search_left = max(search_left, (right + x) // 2)
-                elif ox >= x + w:
-                    search_right = min(search_right, (x + w + ox) // 2)
-            if ox < x + w and right > x:
-                if bottom <= y:
-                    search_top = max(search_top, (bottom + y) // 2)
-                elif oy >= y + h:
-                    search_bottom = min(search_bottom, (y + h + oy) // 2)
-
+        search_left, search_top, search_w, search_h = entry['allocation']
+        search_right = search_left + search_w
+        search_bottom = search_top + search_h
         region = page.crop((search_left, search_top, search_right, search_bottom))
         alpha = region.split()[-1]
         mask = alpha.point(lambda a, t=alpha_threshold: 255 if a >= t else 0)

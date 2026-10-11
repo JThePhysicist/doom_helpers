@@ -69,4 +69,25 @@ def validate_manifest(manifest, pages=None):
         if (entry['x'] + entry['width'] > manifest['atlas_size'] or
                 entry['y'] + entry['height'] > manifest['atlas_size']):
             raise DoomWadError(f"Manifest sprite {name!r} extends outside its page")
+        if 'allocation' in entry:
+            box = entry['allocation']
+            if not isinstance(box, list) or len(box) != 4:
+                raise DoomWadError("Sprite allocation must be [x, y, width, height]")
+            for i, value in enumerate(box):
+                _integer(value, 'allocation', 0 if i < 2 else 1)
+            ax, ay, aw, ah = box
+            if (ax > entry['x'] or ay > entry['y'] or
+                    ax+aw < entry['x']+entry['width'] or ay+ah < entry['y']+entry['height'] or
+                    ax+aw > manifest['atlas_size'] or ay+ah > manifest['atlas_size']):
+                raise DoomWadError("Sprite crop must fit inside its page and allocation")
+    for i, entry in enumerate(sprites):
+        if 'allocation' not in entry:
+            continue
+        x, y, w, h = entry['allocation']
+        for other in sprites[i+1:]:
+            if other['page'] != entry['page'] or 'allocation' not in other:
+                continue
+            ox, oy, ow, oh = other['allocation']
+            if x < ox+ow and ox < x+w and y < oy+oh and oy < y+h:
+                raise DoomWadError("Sprite editing allocations overlap")
     return manifest
