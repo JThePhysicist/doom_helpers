@@ -24,12 +24,18 @@ class Wad:
         self.lumps: list[Lump] = []
 
     @classmethod
-    def load(cls, path: str | Path) -> "Wad":
-        data = Path(path).read_bytes()
-        return cls.from_bytes(data)
+    def load(cls, path: str | Path, *, max_bytes: int = 512 * 1024 * 1024,
+             max_lumps: int = 1_000_000) -> "Wad":
+        if Path(path).stat().st_size > max_bytes:
+            raise InvalidWadError("WAD exceeds configured byte limit")
+        with Path(path).open('rb') as stream:
+            data = stream.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise InvalidWadError("WAD exceeds configured byte limit")
+        return cls.from_bytes(data, max_lumps=max_lumps)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "Wad":
+    def from_bytes(cls, data: bytes, *, max_lumps: int = 1_000_000) -> "Wad":
         if len(data) < _HEADER_SIZE:
             raise InvalidWadError("File is too small to contain a WAD header")
 
@@ -42,11 +48,13 @@ class Wad:
 
         wad = cls(wad_type=wad_type)
 
+        if num_lumps > max_lumps:
+            raise InvalidWadError("WAD exceeds configured lump limit")
         if num_lumps < 0:
             raise InvalidWadError("WAD has a negative lump count")
 
         dir_end = info_table_ofs + num_lumps * _DIRENTRY_SIZE
-        if info_table_ofs < 0 or dir_end > len(data):
+        if info_table_ofs < _HEADER_SIZE or dir_end > len(data):
             raise InvalidWadError("WAD directory extends past end of file")
 
         for i in range(num_lumps):

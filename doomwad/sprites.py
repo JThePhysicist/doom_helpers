@@ -95,7 +95,8 @@ def _lumps_in_sprite_range(wad: Wad) -> list[Lump]:
     return candidates if found_range else list(wad.lumps)
 
 
-def decode_patch(name: str, data: bytes, palette: Palette) -> DecodedPatch:
+def decode_patch(name: str, data: bytes, palette: Palette, *,
+                 max_pixels: int = 4_194_304) -> DecodedPatch:
     """Decode a Doom picture-format lump into an RGBA Pillow image."""
     if len(data) < _HEADER_SIZE:
         raise DoomWadError(f"Patch {name!r} is too small to contain a header")
@@ -104,11 +105,17 @@ def decode_patch(name: str, data: bytes, palette: Palette) -> DecodedPatch:
     if width <= 0 or height <= 0:
         raise DoomWadError(f"Patch {name!r} has invalid dimensions {width}x{height}")
 
+    if width * height > max_pixels:
+        raise DoomWadError(f"Patch {name!r} exceeds configured pixel limit")
+
     columnofs_fmt = f"<{width}I"
     columnofs_size = struct.calcsize(columnofs_fmt)
     if _HEADER_SIZE + columnofs_size > len(data):
         raise DoomWadError(f"Patch {name!r} column table extends past end of lump")
     columnofs = struct.unpack_from(columnofs_fmt, data, _HEADER_SIZE)
+
+    if any(offset < _HEADER_SIZE + columnofs_size or offset >= len(data) for offset in columnofs):
+        raise DoomWadError(f"Patch {name!r} column offset is outside post data")
 
     image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     pixels = image.load()
@@ -126,6 +133,8 @@ def decode_patch(name: str, data: bytes, palette: Palette) -> DecodedPatch:
             length = data[offset + 1]
             if offset + 3 + length + 1 > len(data):
                 raise DoomWadError(f"Patch {name!r} column {col} has truncated post data")
+            if topdelta + length > height:
+                raise DoomWadError(f"Patch {name!r} post extends beyond image height")
             pixel_offset = offset + 3
             for i in range(length):
                 index = data[pixel_offset + i]
