@@ -64,6 +64,10 @@ class ShelfPacker:
     """Simple shelf (row-based) bin packer for laying sprites onto square pages."""
 
     def __init__(self, size: int = DEFAULT_ATLAS_SIZE, padding: int = DEFAULT_PADDING):
+        if type(size) is not int or not 1 <= size <= 32767:
+            raise DoomWadError('Atlas size must be a positive integer up to 32767')
+        if type(padding) is not int or padding < 0:
+            raise DoomWadError('Atlas padding must be a nonnegative integer')
         self.size = size
         self.padding = padding
         self._pages: list[list[dict]] = []  # per page: list of shelf dicts
@@ -71,7 +75,9 @@ class ShelfPacker:
     def pack(self, items: list[tuple[str, int, int]]) -> list[Placement]:
         """Pack (name, width, height) items; returns placements in page order."""
         placements: list[Placement] = []
-        for name, w, h in sorted(items, key=lambda it: it[2], reverse=True):
+        for name, w, h in sorted(items, key=lambda it: (-it[2], it[0])):
+            if type(w) is not int or type(h) is not int or w <= 0 or h <= 0:
+                raise DoomWadError('Sprite dimensions must be positive integers')
             if w > self.size or h > self.size:
                 raise DoomWadError(
                     f"Sprite {name!r} ({w}x{h}) is larger than the atlas size "
