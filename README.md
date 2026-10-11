@@ -2,6 +2,12 @@
 
 A Python library and CLI for reading and editing Doom WAD files.
 
+## Documentation
+
+- [C4 architecture](docs/architecture.html) — open the HTML file in a browser.
+- [End-to-end user guide](docs/user-guide.md)
+- [Feature gaps and improvement opportunities](docs/feature-gaps.md)
+
 ## Project layout
 
 ```
@@ -114,9 +120,8 @@ python scripts/rebuild_sprite_atlas.py \
 ```
 
 The full pipeline: `extract_sprite_atlas.py` -> hand-edit the PNGs ->
-`realign_sprite_atlas.py` -> `rebuild_sprite_atlas.py`. The Doom picture
-format only supports up to 255px tall images (single-byte post offsets),
-which `encode_patch` enforces.
+`realign_sprite_atlas.py` -> `rebuild_sprite_atlas.py`. The current encoder supports images up to 255px tall and does not implement
+source-port tall-patch extensions.
 
 ## Tests
 

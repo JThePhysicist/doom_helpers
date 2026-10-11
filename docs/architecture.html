@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>doomwad — C4 architecture</title>
+<style>
+:root{color-scheme:light;--ink:#182c42;--muted:#536477;--blue:#175c9b;--pale:#edf5fd;--line:#c8d7e7}
+*{box-sizing:border-box}body{margin:0;background:#f6f8fb;color:var(--ink);font:16px/1.65 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:40px 24px}h1,h2,h3{line-height:1.2}h1{font-size:2.7rem}h2{margin-top:50px}a{color:var(--blue)}nav{display:flex;gap:20px;flex-wrap:wrap}section{scroll-margin-top:24px}.diagram{padding:24px;background:white;border:1px solid var(--line);border-radius:12px;margin:20px 0}.row{display:flex;gap:16px;align-items:stretch;flex-wrap:wrap}.box{flex:1;min-width:190px;border:2px solid var(--blue);border-radius:8px;padding:16px;background:var(--pale);text-align:center}.box strong{display:block}.box small{display:block;color:var(--muted)}.external{background:#f0f1f3;border-color:#718093}.boundary{border:2px dashed var(--blue);padding:20px;margin:20px 0;border-radius:8px}.boundary>p{margin-top:0;color:var(--blue);font-weight:700}.rel{text-align:center;color:var(--muted);padding:12px}.rel b{color:var(--blue)}table{border-collapse:collapse;width:100%;background:white}th,td{border:1px solid var(--line);padding:12px;text-align:left;vertical-align:top}code{background:#e8eef5;padding:2px 5px;border-radius:3px}pre{background:#182c42;color:#edf5fd;padding:20px;overflow:auto;border-radius:8px}pre code{background:transparent;padding:0}footer{margin-top:48px;color:var(--muted)}@media(max-width:650px){h1{font-size:2rem}main{padding:24px 16px}table{font-size:14px}.box{min-width:100%}}@media print{body{background:white}main{max-width:none;padding:0}.diagram,table{break-inside:avoid}a{color:inherit}}
+</style>
+</head>
+<body><main>
+<header><p>doom_helpers / doomwad 0.1.0</p><h1>C4 architecture</h1><p>A local Python toolkit for inspecting Doom WAD archives and editing sprite artwork through PNG atlases. This document describes the implementation after commit <code>3c7c6d7</code>.</p>
+<nav aria-label="Document navigation"><a href="#context">Context</a><a href="#containers">Containers</a><a href="#components">Components</a><a href="#code">Code</a><a href="#flow">Runtime flow</a><a href="user-guide.md">User guide</a><a href="feature-gaps.md">Feature gaps</a></nav></header>
+<section id="context"><h2>Level 1 · System context</h2><p>The user operates the toolkit on local files. A separate image editor changes atlas artwork; a separate Doom engine consumes the rebuilt mod. There are no application servers, databases, authentication services, or runtime API calls.</p>
+<div class="diagram" role="img" aria-label="A mod author uses doomwad to convert WADs to PNG and JSON files, edits PNGs externally, and loads the resulting PWAD in a Doom engine.">
+<div class="row"><div class="box external"><strong>Mod author</strong><small>[Person]</small>Inspects archives and edits sprites</div><div class="box external"><strong>Python developer</strong><small>[Person]</small>Uses APIs and runs tests</div></div>
+<div class="rel"><b>↓</b> Invoke commands / call Python APIs</div><div class="box"><strong>doomwad</strong><small>[Software system · Python]</small>Reads WADs, decodes sprites, manages atlases, writes WADs</div>
+<div class="rel"><b>↕</b> Reads and writes local WAD, PNG, and JSON files</div>
+<div class="row"><div class="box external"><strong>Image editor</strong><small>[External software system]</small>Reads/writes PNG artwork</div><div class="box external"><strong>Doom engine / source port</strong><small>[External software system]</small>Loads the base IWAD and output PWAD</div></div>
+</div><p>External tools communicate through files, not a network integration. Base game WADs are supplied by the user. Packaging downloads dependencies during installation; it is outside the runtime architecture.</p></section>
+<section id="containers"><h2>Level 2 · Containers</h2><p>In C4, a container is an application or data store, not necessarily a Docker container. Here each command runs as a short-lived Python process. The reusable library is an in-process dependency, not an independently deployed service.</p>
+<div class="diagram"><div class="boundary"><p>doomwad system boundary</p><div class="row"><div class="box"><strong>Inspection application</strong><small>[Container · Python CLI]</small><code>doomwad</code><br>info, list, list-sprites, extract</div><div class="box"><strong>Atlas applications</strong><small>[Containers · Python scripts]</small>extract_sprite_atlas.py<br>realign_sprite_atlas.py<br>rebuild_sprite_atlas.py</div></div><div class="rel"><b>↓</b> Import and invoke library components in the same process</div><div class="box"><strong>doomwad package + Pillow</strong><small>[Shared implementation; not a service]</small>Binary parsing, image conversion, palette lookup, atlas bookkeeping</div></div><div class="rel"><b>↕</b> Filesystem reads and writes</div><div class="row"><div class="box external"><strong>WAD archive files</strong><small>[Data store · binary]</small>Headers, directory entries, raw lumps</div><div class="box external"><strong>Atlas workspace</strong><small>[Data store · PNG + JSON]</small>RGBA pages, palette, rectangles, anchor offsets</div></div></div>
+<p>Deployment consists of a Python environment with an editable package and Pillow. pytest is a development dependency. The atlas scripts reside in the checkout and are not installed console entry points. No long-running process needs restarting between tasks.</p></section>
+<section id="components"><h2>Level 3 · Components</h2><p>These components are shared by the command applications. Arrows name actual in-process dependencies; JSON and binary formats cross the filesystem boundary.</p>
+<div class="diagram"><div class="row"><div class="box"><strong>cli.py</strong><small>[Component]</small>argparse commands → Wad and sprite discovery</div><div class="box"><strong>Atlas scripts</strong><small>[Components]</small>Orchestrate Wad, Palette, sprites, atlas functions</div></div><div class="rel"><b>↓</b> Python function and class calls</div><div class="row"><div class="box"><strong>wad.py + lump.py</strong><small>[Components]</small>WAD parsing/serialization and raw directory operations</div><div class="box"><strong>sprites.py</strong><small>[Component]</small>Marker discovery and patch codec → Palette, Wad, Pillow</div><div class="box"><strong>atlas.py</strong><small>[Component]</small>Shelf packing, manifest I/O, crop/realign → Palette, DecodedPatch, Pillow</div></div><div class="rel"><b>↓</b> Binary/image helpers and palette color lookup</div><div class="row"><div class="box"><strong>palette.py</strong><small>[Component]</small>PLAYPAL parsing → Wad; exact/nearest RGB lookup</div><div class="box"><strong>lumps/maps.py</strong><small>[Component · public API]</small>Typed records ↔ standard Doom map lump bytes</div><div class="box"><strong>exceptions.py</strong><small>[Component]</small>DoomWadError, InvalidWadError, LumpNotFoundError</div></div></div>
+<table><thead><tr><th>Responsibility</th><th>Implementation and boundary</th></tr></thead><tbody>
+<tr><td>Archive storage</td><td><a href="../doomwad/wad.py">Wad</a> loads complete files into memory. The WAD header stores type, lump count, and directory offset; directory entries store byte position, size, and eight-byte name. Raw lump order is preserved except explicit edits.</td></tr>
+<tr><td>Sprite codec</td><td><a href="../doomwad/sprites.py">sprites.py</a> recognizes frame/rotation names and sprite marker ranges. Patch headers carry dimensions and signed anchor offsets; per-column posts encode palette indices with transparency represented by omitted pixels. Encoding currently limits height to 255.</td></tr>
+<tr><td>Palette mapping</td><td><a href="../doomwad/palette.py">Palette</a> reads 256 RGB colors from PLAYPAL, selects exact colors where possible, otherwise minimizes squared RGB distance. Nearest-color results are cached.</td></tr>
+<tr><td>Atlas geometry</td><td><a href="../doomwad/atlas.py">ShelfPacker/build_atlas</a> sort sprites by height and fill shelves across square pages. Duplicate names are rejected. Realignment changes rectangles and offsets, with midpoint limits for shared gaps between adjacent tiles.</td></tr>
+<tr><td>Map records</td><td><a href="../doomwad/lumps/maps.py">maps.py</a> parses THINGS, LINEDEFS, SIDEDEFS, VERTEXES, and SECTORS. It has no map-level editing orchestration or node regeneration.</td></tr>
+</tbody></table></section>
+<section id="code"><h2>Level 4 · Code view</h2><p>The central data model is deliberately small. This view describes types and relationships rather than an exhaustive method inventory.</p>
+<pre><code>Wad
+  wad_type: "IWAD" | "PWAD"
+  lumps: list[Lump]                    (ordered composition)
+  load / from_bytes / save / to_bytes
+  find / find_all / index_of / add / insert / replace / remove
+
+Lump
+  name: str
+  data: bytes
+  size: int                           (derived)
+
+Palette
+  colors: list[tuple[int, int, int]]    (256 RGB triples)
+  from_wad / from_playpal_bytes
+  nearest_index / to_manifest / from_manifest
+
+DecodedPatch
+  name: str
+  image: PIL.Image                    (RGBA)
+  left_offset, top_offset: int
+
+Placement                             (NamedTuple)
+  name, page, x, y, width, height
+
+RealignResult                         (dataclass)
+  name, changed, dx, dy, old_box, new_box, warning</code></pre>
+<p><code>decode_patch(bytes, Palette)</code> produces a DecodedPatch. <code>build_atlas</code> consumes patches and produces page images plus a manifest. <code>iter_manifest_sprites</code> produces cropped images and offsets for <code>encode_patch</code>. Map record dataclasses use class-level struct formats and list conversion methods.</p>
+<h3>Manifest contract</h3><p>Version 1 is a JSON object with <code>version</code>, <code>atlas_size</code>, <code>padding</code>, <code>palette</code>, <code>pages</code>, and <code>sprites</code>. Each sprite has <code>name</code>, <code>page</code>, <code>x</code>, <code>y</code>, <code>width</code>, <code>height</code>, <code>left_offset</code>, and <code>top_offset</code>. Page indices are zero based; page filenames normally resolve relative to the manifest directory. Loading currently does not enforce a schema or version compatibility.</p></section>
+<section id="flow"><h2>Runtime view · End-to-end editing</h2><ol>
+<li><strong>Inspect:</strong> the author discovers prefixes through the CLI; Wad reads the archive and sprite discovery scans marker ranges.</li>
+<li><strong>Extract:</strong> the script loads source patches and PLAYPAL from the source or a separate palette WAD. It decodes RGBA images, packs pages, and saves PNGs plus the manifest.</li>
+<li><strong>Edit:</strong> the external image editor modifies PNG pixels without rearranging pages. No application process remains active.</li>
+<li><strong>Realign:</strong> the script loads JSON and PNGs, finds opaque bounds, and updates crop rectangles and anchor offsets. Dry-run reports changes without writing. Pages remain unchanged.</li>
+<li><strong>Rebuild:</strong> the script crops tiles, maps opaque RGB pixels to palette indices, encodes patches, replaces existing names or inserts missing names inside a sprite range, and writes a WAD.</li>
+<li><strong>Verify:</strong> the author inspects/re-extracts output and loads it alongside the matching base IWAD in their chosen engine.</li>
+</ol><p>Fresh rebuilding creates a sprite PWAD; it does not embed the original archive or palette lump. Updating an existing archive retains its type and unrelated raw lumps. Raw name-based lookups use the first occurrence, which matters for duplicate names and repeated map lump names.</p></section>
+<section id="quality"><h2>Quality attributes and limits</h2><ul>
+<li><strong>Testability:</strong> generated archives and subprocess pipelines exercise the library and scripts. The post-fix suite has 30 passing cases; real-engine integration is separate.</li>
+<li><strong>Portability:</strong> Python >=3.9 and Pillow are declared dependencies. No platform-specific application services are required.</li>
+<li><strong>Data integrity:</strong> negative WAD counts/sizes and truncated patch posts are rejected. Writes are direct rather than transactional; keep originals and separate output paths.</li>
+<li><strong>Scope:</strong> no GUI, streaming archive access, tall-patch encoding, Hexen/UDMF parser, map node builder, or hosted interface is implemented.</li>
+<li><strong>Scale:</strong> full archives and image pages live in process memory. Shelf packing prioritizes simple placement over optimal page utilization.</li>
+</ul><p>For operational steps, use the <a href="user-guide.md">user guide</a>. For proposed validation, usability, and format extensions, see <a href="feature-gaps.md">feature gaps</a>.</p></section>
+<footer>This page is self-contained: diagrams use HTML/CSS, with no CDN, JavaScript, or network dependency. Source links are relative to the checkout. Open this file directly in a browser or print it to PDF.</footer>
+</main></body></html>
