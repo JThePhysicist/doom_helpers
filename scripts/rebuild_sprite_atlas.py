@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from doomwad.atlas import iter_manifest_sprites, load_atlas_pages, load_manifest
 from doomwad.palette import Palette
-from doomwad.sprites import encode_patch
+from doomwad.sprites import encode_patch, update_sprite
 from doomwad.wad import Wad
 from doomwad.storage import atomic_write
 
@@ -42,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--output", required=True, help="Path to write the resulting PWAD to")
     parser.add_argument("--overwrite", action="store_true", help="Replace the output WAD if it exists")
+    parser.add_argument("--duplicates", choices=["error", "first", "last"], default="error")
     args = parser.parse_args(argv)
 
     manifest_path = Path(args.manifest)
@@ -56,18 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     count = 0
     for name, image, left_offset, top_offset in iter_manifest_sprites(manifest, pages):
         data = encode_patch(image, left_offset, top_offset, palette)
-        if name in wad:
-            wad.replace(name, data)
-        else:
-            end_markers = [i for i, lump in enumerate(wad.lumps)
-                           if lump.name in ("S_END", "SS_END")]
-            if end_markers:
-                wad.insert(end_markers[-1], name, data)
-            else:
-                if "S_START" not in wad and "SS_START" not in wad:
-                    wad.add("S_START", b"")
-                wad.add(name, data)
-                wad.add("S_END", b"")
+        update_sprite(wad, name, data, args.duplicates)
         count += 1
 
     atomic_write(args.output, wad.to_bytes(), overwrite=args.overwrite)

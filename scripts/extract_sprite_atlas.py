@@ -58,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         "--padding", type=int, default=DEFAULT_PADDING, help="Pixels of spacing between tiles"
     )
     parser.add_argument("--overwrite", action="store_true", help="Replace existing atlas files")
+    parser.add_argument("--duplicates", choices=["error", "first", "last"], default="error")
     args = parser.parse_args(argv)
 
     wad = Wad.load(args.wad)
@@ -71,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
             "WAD (e.g. the IWAD) that has one."
         )
 
-    lumps = find_sprite_lumps(wad, args.sprites)
+    lumps = find_sprite_lumps(wad, args.sprites, duplicate_policy=args.duplicates)
     if not lumps:
         parser.error(f"No sprites found matching: {', '.join(args.sprites)}")
 

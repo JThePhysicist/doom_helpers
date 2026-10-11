@@ -45,7 +45,7 @@ def sprite_name_matches(name: str, prefix: str) -> bool:
     return bool(match) and match.group("prefix") == prefix
 
 
-def find_sprite_lumps(wad: Wad, prefixes: list[str]) -> list[Lump]:
+def find_sprite_lumps(wad: Wad, prefixes: list[str], *, duplicate_policy: str = "error") -> list[Lump]:
     """Find all lumps in `wad` for the given sprite prefixes (e.g. ["TROO"]).
 
     Restricts the search to between S_START/S_END (or SS_START/SS_END)
@@ -53,11 +53,11 @@ def find_sprite_lumps(wad: Wad, prefixes: list[str]) -> list[Lump]:
     """
     candidates = _lumps_in_sprite_range(wad)
     prefix_set = set(prefixes)
-    return [
+    return resolve_duplicates([
         lump
         for lump in candidates
         if any(sprite_name_matches(lump.name, p) for p in prefix_set)
-    ]
+    ], duplicate_policy)
 
 
 def list_sprite_prefixes(wad: Wad) -> dict[str, list[str]]:
@@ -78,21 +78,61 @@ def list_sprite_prefixes(wad: Wad) -> dict[str, list[str]]:
     return {prefix: sorted(names) for prefix, names in sorted(groups.items())}
 
 
-def _lumps_in_sprite_range(wad: Wad) -> list[Lump]:
-    starts = {start for start, _ in _SPRITE_MARKER_PAIRS}
-    ends = {end for _, end in _SPRITE_MARKER_PAIRS}
-    candidates = []
-    active = False
-    found_range = False
-    for lump in wad.lumps:
+def sprite_ranges(wad: Wad) -> list[tuple[int, int]]:
+    """Return paired marker bounds; malformed or mixed ranges are errors."""
+    starts = dict(_SPRITE_MARKER_PAIRS)
+    ends = set(starts.values())
+    active = None
+    ranges = []
+    for i, lump in enumerate(wad.lumps):
         if lump.name in starts:
-            active = True
-            found_range = True
+            if active is not None:
+                raise DoomWadError('Nested sprite start markers are not supported')
+            active = (i, starts[lump.name])
         elif lump.name in ends:
-            active = False
-        elif active:
-            candidates.append(lump)
-    return candidates if found_range else list(wad.lumps)
+            if active is None or lump.name != active[1]:
+                raise DoomWadError('Unmatched or mixed sprite end marker')
+            ranges.append((active[0], i))
+            active = None
+    if active is not None:
+        raise DoomWadError('Unmatched sprite start marker')
+    return ranges
+
+
+def _lumps_in_sprite_range(wad: Wad) -> list[Lump]:
+    ranges = sprite_ranges(wad)
+    return [lump for start, end in ranges for lump in wad.lumps[start+1:end]] if ranges else list(wad.lumps)
+
+
+def resolve_duplicates(lumps: list[Lump], policy: str = 'error') -> list[Lump]:
+    if policy not in ('error', 'first', 'last'):
+        raise DoomWadError('Duplicate policy must be error, first, or last')
+    result = {}
+    for lump in lumps:
+        if lump.name in result:
+            if policy == 'error':
+                raise DoomWadError(f'Duplicate sprite {lump.name!r}; select first or last explicitly')
+            if policy == 'first':
+                continue
+        result[lump.name] = lump
+    return list(result.values())
+
+
+def update_sprite(wad: Wad, name: str, data: bytes, duplicate_policy: str = 'error') -> None:
+    ranges = sprite_ranges(wad)
+    matches = [i for i,lump in enumerate(wad.lumps) if lump.name == name]
+    resolve_duplicates([wad.lumps[i] for i in matches], duplicate_policy)
+    if matches:
+        chosen = matches[-1] if duplicate_policy == 'last' else matches[0]
+        if ranges and not any(start < chosen < end for start,end in ranges):
+            raise DoomWadError(f'Sprite {name!r} exists outside a sprite range')
+        wad.lumps[chosen] = Lump(name, data)
+    elif ranges:
+        wad.insert(ranges[-1][1], name, data)
+    else:
+        wad.add('S_START', b'')
+        wad.add(name, data)
+        wad.add('S_END', b'')
 
 
 def decode_patch(name: str, data: bytes, palette: Palette, *,

@@ -79,6 +79,16 @@ class Wad:
 
         return wad
 
+    def validate(self) -> None:
+        from .sprites import sprite_ranges
+        sprite_ranges(self)
+        for lump in self.lumps:
+            if (not isinstance(lump.name, str) or not lump.name or len(lump.name) > 8
+                    or not lump.name.isascii() or '\x00' in lump.name):
+                raise InvalidWadError('Lump names must be nonempty ASCII names of at most 8 bytes')
+            if not isinstance(lump.data, bytes):
+                raise InvalidWadError('Lump data must be bytes')
+
     def to_bytes(self) -> bytes:
         body = bytearray()
         directory = bytearray()
