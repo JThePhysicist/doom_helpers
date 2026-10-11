@@ -9,6 +9,7 @@ from PIL import Image
 
 from .exceptions import DoomWadError
 from .palette import Palette
+from .manifest import validate_manifest
 from .sprites import DecodedPatch
 
 MANIFEST_VERSION = 1
@@ -111,7 +112,7 @@ def build_atlas(
         "atlas_size": atlas_size,
         "padding": padding,
         "palette": palette.to_manifest(),
-        "pages": [],  # filled in by save_atlas once page filenames are known
+        "pages": [f"page_{i}.png" for i in range(len(pages))],  # renamed by save_atlas
         "sprites": sprite_entries,
     }
     return pages, manifest
@@ -121,6 +122,8 @@ def save_atlas(
     pages: list[Image.Image], manifest: dict, output_dir: str | Path, asset_name: str
 ) -> tuple[list[Path], Path]:
     """Write atlas page PNGs and the manifest JSON to `output_dir`."""
+    filenames = [f"{asset_name}_{i}.png" for i in range(len(pages))]
+    validate_manifest(dict(manifest, pages=filenames), pages)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -141,10 +144,14 @@ def save_atlas(
 
 
 def load_manifest(path: str | Path) -> dict:
-    return json.loads(Path(path).read_text())
+    try:
+        return validate_manifest(json.loads(Path(path).read_text()))
+    except (ValueError, UnicodeError) as exc:
+        raise DoomWadError(f"Invalid manifest JSON: {exc}") from exc
 
 
 def load_atlas_pages(manifest: dict, atlas_dir: str | Path) -> list[Image.Image]:
+    validate_manifest(manifest)
     atlas_dir = Path(atlas_dir)
     pages = []
     for filename in manifest["pages"]:
@@ -152,6 +159,7 @@ def load_atlas_pages(manifest: dict, atlas_dir: str | Path) -> list[Image.Image]
         if not page_path.exists():
             raise DoomWadError(f"Atlas page {page_path} referenced by manifest is missing")
         pages.append(Image.open(page_path).convert("RGBA"))
+    validate_manifest(manifest, pages)
     return pages
 
 
@@ -162,6 +170,7 @@ def iter_manifest_sprites(
 
     Yields (name, image, left_offset, top_offset) ready for re-encoding.
     """
+    validate_manifest(manifest, pages)
     results = []
     for entry in manifest["sprites"]:
         page = pages[entry["page"]]
@@ -202,6 +211,7 @@ def realign_sprites(
     RealignResult per sprite, so callers can report what moved and flag
     anything that looks like it spilled past its allotted space.
     """
+    validate_manifest(manifest, pages)
     if margin is None:
         margin = manifest.get("padding", DEFAULT_PADDING)
 
