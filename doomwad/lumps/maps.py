@@ -31,7 +31,7 @@ def is_map_marker(name: str) -> bool:
 
 @dataclass
 class Thing:
-    _FORMAT: ClassVar[str] = "<hhhhh"
+    _FORMAT: ClassVar[str] = "<hhhHH"
     _SIZE: ClassVar[int] = struct.calcsize(_FORMAT)
 
     x: int
@@ -159,7 +159,7 @@ class Vertex:
 
 @dataclass
 class Sector:
-    _FORMAT: ClassVar[str] = "<hh8s8shhh"
+    _FORMAT: ClassVar[str] = "<hh8s8shHH"
     _SIZE: ClassVar[int] = struct.calcsize(_FORMAT)
 
     floor_height: int
