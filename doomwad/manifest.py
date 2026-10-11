@@ -38,6 +38,14 @@ def validate_manifest(manifest, pages=None):
             raise DoomWadError("Manifest pages must be relative paths without traversal")
     if len(set(filenames)) != len(filenames):
         raise DoomWadError("Manifest page filenames must be unique")
+    if 'index_pages' in manifest:
+        indices = manifest['index_pages']
+        if not isinstance(indices, list) or len(indices) != len(filenames):
+            raise DoomWadError('Index page count must match atlas page count')
+        for filename in indices:
+            if (not isinstance(filename, str) or not filename or '\\' in filename or
+                    PurePath(filename).is_absolute() or '..' in PurePath(filename).parts):
+                raise DoomWadError('Index pages must be relative paths without traversal')
     if pages is not None:
         if len(pages) != len(filenames):
             raise DoomWadError("Manifest page count does not match loaded pages")

@@ -105,6 +105,7 @@ def build_atlas(
     palette: Palette,
     atlas_size: int = DEFAULT_ATLAS_SIZE,
     padding: int = DEFAULT_PADDING,
+    *, preserve_indices: bool = False,
 ) -> tuple[list[Image.Image], dict]:
     """Pack decoded sprite patches onto 1..N square pages of `atlas_size`.
 
@@ -128,6 +129,12 @@ def build_atlas(
     for placement in placements:
         patch = by_name[placement.name]
         pages[placement.page].paste(patch.image, (placement.x, placement.y))
+        if preserve_indices:
+            if patch.palette_indices is None:
+                raise DoomWadError('Index preservation requires decoded palette indices')
+            if 'palette_indices' not in pages[placement.page].info:
+                pages[placement.page].info['palette_indices'] = Image.new('L', (atlas_size, atlas_size))
+            pages[placement.page].info['palette_indices'].paste(patch.palette_indices, (placement.x, placement.y))
         sprite_entries.append(
             {
                 "name": placement.name,
@@ -172,10 +179,17 @@ def save_atlas(
         encoded = BytesIO()
         page.save(encoded, format="PNG")
         outputs.append((path, encoded.getvalue()))
+        if 'palette_indices' in page.info:
+            index_name = f'{asset_name}_{i}_indices.png'
+            index_buffer = BytesIO()
+            page.info['palette_indices'].save(index_buffer, format='PNG')
+            outputs.append((output_dir / index_name, index_buffer.getvalue()))
         page_paths.append(path)
         page_filenames.append(filename)
 
     manifest = dict(manifest, pages=page_filenames)
+    if any('palette_indices' in page.info for page in pages):
+        manifest['index_pages'] = [f'{asset_name}_{i}_indices.png' for i in range(len(pages))]
     manifest_path = output_dir / f"{asset_name}_manifest.json"
     outputs.append((manifest_path, json.dumps(manifest, indent=2).encode()))
     atomic_batch(outputs, overwrite=overwrite)
@@ -199,6 +213,12 @@ def load_atlas_pages(manifest: dict, atlas_dir: str | Path) -> list[Image.Image]
         if not page_path.exists():
             raise DoomWadError(f"Atlas page {page_path} referenced by manifest is missing")
         pages.append(Image.open(page_path).convert("RGBA"))
+    if 'index_pages' in manifest:
+        for page, filename in zip(pages, manifest['index_pages']):
+            with Image.open(atlas_dir / filename) as indices:
+                if indices.mode != 'L' or indices.size != page.size:
+                    raise DoomWadError('Index pages must be grayscale with matching dimensions')
+                page.info['palette_indices'] = indices.copy()
     validate_manifest(manifest, pages)
     return pages
 
@@ -216,6 +236,8 @@ def iter_manifest_sprites(
         page = pages[entry["page"]]
         x, y, w, h = entry["x"], entry["y"], entry["width"], entry["height"]
         tile = page.crop((x, y, x + w, y + h))
+        if 'palette_indices' in page.info:
+            tile.info['palette_indices'] = page.info['palette_indices'].crop((x,y,x+w,y+h))
         results.append((entry["name"], tile, entry["left_offset"], entry["top_offset"]))
     return results
 

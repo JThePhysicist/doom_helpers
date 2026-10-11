@@ -53,6 +53,8 @@ def configure_parser(parser):
         "--padding", type=int, default=DEFAULT_PADDING, help="Pixels of spacing between tiles"
     )
     parser.add_argument("--overwrite", action="store_true", help="Replace existing atlas files")
+    parser.add_argument("--palette-index", type=int, default=0)
+    parser.add_argument("--preserve-indices", action="store_true")
     parser.add_argument("--duplicates", choices=["error", "first", "last"], default="error")
 
 
@@ -61,7 +63,7 @@ def run(args, parser):
     wad = Wad.load(args.wad)
     palette_wad = Wad.load(args.palette_wad) if args.palette_wad else wad
     try:
-        palette = Palette.from_wad(palette_wad)
+        palette = Palette.from_wad(palette_wad, palette_index=args.palette_index)
     except DoomWadError:
         parser.error(
             "No PLAYPAL lump found in "
@@ -76,7 +78,7 @@ def run(args, parser):
     patches = [decode_patch(lump.name, lump.data, palette) for lump in lumps]
 
     pages, manifest = build_atlas(
-        patches, palette, atlas_size=args.atlas_size, padding=args.padding
+        patches, palette, atlas_size=args.atlas_size, padding=args.padding, preserve_indices=args.preserve_indices
     )
 
     asset_name = "_".join(args.sprites)

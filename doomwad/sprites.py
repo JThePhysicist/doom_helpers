@@ -37,6 +37,7 @@ class DecodedPatch:
     image: Image.Image  # RGBA
     left_offset: int
     top_offset: int
+    palette_indices: Image.Image | None = None
 
 
 def sprite_name_matches(name: str, prefix: str) -> bool:
@@ -159,6 +160,7 @@ def decode_patch(name: str, data: bytes, palette: Palette, *,
 
     image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     pixels = image.load()
+    indices = Image.new("L", (width, height))
 
     for col in range(width):
         offset = columnofs[col]
@@ -182,9 +184,10 @@ def decode_patch(name: str, data: bytes, palette: Palette, *,
                 y = topdelta + i
                 if y < height:
                     pixels[col, y] = (r, g, b, 255)
+                    indices.putpixel((col, y), index)
             offset = pixel_offset + length + 1
 
-    return DecodedPatch(name=name, image=image, left_offset=left, top_offset=top)
+    return DecodedPatch(name=name, image=image, left_offset=left, top_offset=top, palette_indices=indices)
 
 
 def encode_patch(
@@ -193,6 +196,7 @@ def encode_patch(
     top_offset: int,
     palette: Palette,
     alpha_threshold: int = _ALPHA_OPAQUE_THRESHOLD,
+    *, palette_indices: Image.Image | None = None,
 ) -> bytes:
     """Encode an RGBA Pillow image back into Doom picture-format lump bytes."""
     if image.mode != "RGBA":
@@ -206,6 +210,8 @@ def encode_patch(
             f"of {_MAX_PATCH_HEIGHT}px (single-byte post offsets)"
         )
 
+    if palette_indices is not None and (palette_indices.mode != 'L' or palette_indices.size != image.size):
+        raise ValueError('Palette index image must be L mode with the same size as the patch')
     pixels = image.load()
     column_bytes: list[bytes] = []
 
@@ -220,7 +226,9 @@ def encode_patch(
             run = bytearray()
             while y < height and pixels[x, y][3] >= alpha_threshold:
                 r, g, b, _a = pixels[x, y]
-                run.append(palette.nearest_index((r, g, b)))
+                original = palette_indices.getpixel((x, y)) if palette_indices is not None else None
+                index = original if original is not None and palette.rgb(original) == (r,g,b) else palette.nearest_index((r,g,b))
+                run.append(index)
                 y += 1
             col += bytes([run_start, len(run), 0]) + bytes(run) + bytes([0])
         col.append(0xFF)

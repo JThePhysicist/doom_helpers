@@ -53,7 +53,7 @@ def run(args, parser):
 
     count = 0
     for name, image, left_offset, top_offset in iter_manifest_sprites(manifest, pages):
-        data = encode_patch(image, left_offset, top_offset, palette)
+        data = encode_patch(image, left_offset, top_offset, palette, palette_indices=image.info.get("palette_indices"))
         update_sprite(wad, name, data, args.duplicates)
         count += 1
 
