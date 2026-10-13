@@ -37,6 +37,7 @@ class DecodedPatch:
     image: Image.Image  # RGBA
     left_offset: int
     top_offset: int
+    palette_indices: Image.Image | None = None
 
 
 def sprite_name_matches(name: str, prefix: str) -> bool:
@@ -45,7 +46,7 @@ def sprite_name_matches(name: str, prefix: str) -> bool:
     return bool(match) and match.group("prefix") == prefix
 
 
-def find_sprite_lumps(wad: Wad, prefixes: list[str]) -> list[Lump]:
+def find_sprite_lumps(wad: Wad, prefixes: list[str], *, duplicate_policy: str = "error") -> list[Lump]:
     """Find all lumps in `wad` for the given sprite prefixes (e.g. ["TROO"]).
 
     Restricts the search to between S_START/S_END (or SS_START/SS_END)
@@ -53,11 +54,11 @@ def find_sprite_lumps(wad: Wad, prefixes: list[str]) -> list[Lump]:
     """
     candidates = _lumps_in_sprite_range(wad)
     prefix_set = set(prefixes)
-    return [
+    return resolve_duplicates([
         lump
         for lump in candidates
         if any(sprite_name_matches(lump.name, p) for p in prefix_set)
-    ]
+    ], duplicate_policy)
 
 
 def list_sprite_prefixes(wad: Wad) -> dict[str, list[str]]:
@@ -78,25 +79,68 @@ def list_sprite_prefixes(wad: Wad) -> dict[str, list[str]]:
     return {prefix: sorted(names) for prefix, names in sorted(groups.items())}
 
 
-def _lumps_in_sprite_range(wad: Wad) -> list[Lump]:
-    starts = {start for start, _ in _SPRITE_MARKER_PAIRS}
-    ends = {end for _, end in _SPRITE_MARKER_PAIRS}
-    candidates = []
-    active = False
-    found_range = False
-    for lump in wad.lumps:
+def sprite_ranges(wad: Wad) -> list[tuple[int, int]]:
+    """Return paired marker bounds; malformed or mixed ranges are errors."""
+    starts = dict(_SPRITE_MARKER_PAIRS)
+    ends = set(starts.values())
+    active = None
+    ranges = []
+    for i, lump in enumerate(wad.lumps):
         if lump.name in starts:
-            active = True
-            found_range = True
+            if active is not None:
+                raise DoomWadError('Nested sprite start markers are not supported')
+            active = (i, starts[lump.name])
         elif lump.name in ends:
-            active = False
-        elif active:
-            candidates.append(lump)
-    return candidates if found_range else list(wad.lumps)
+            if active is None or lump.name != active[1]:
+                raise DoomWadError('Unmatched or mixed sprite end marker')
+            ranges.append((active[0], i))
+            active = None
+    if active is not None:
+        raise DoomWadError('Unmatched sprite start marker')
+    return ranges
 
 
-def decode_patch(name: str, data: bytes, palette: Palette) -> DecodedPatch:
+def _lumps_in_sprite_range(wad: Wad) -> list[Lump]:
+    ranges = sprite_ranges(wad)
+    return [lump for start, end in ranges for lump in wad.lumps[start+1:end]] if ranges else list(wad.lumps)
+
+
+def resolve_duplicates(lumps: list[Lump], policy: str = 'error') -> list[Lump]:
+    if policy not in ('error', 'first', 'last'):
+        raise DoomWadError('Duplicate policy must be error, first, or last')
+    result = {}
+    for lump in lumps:
+        if lump.name in result:
+            if policy == 'error':
+                raise DoomWadError(f'Duplicate sprite {lump.name!r}; select first or last explicitly')
+            if policy == 'first':
+                continue
+        result[lump.name] = lump
+    return list(result.values())
+
+
+def update_sprite(wad: Wad, name: str, data: bytes, duplicate_policy: str = 'error') -> None:
+    ranges = sprite_ranges(wad)
+    matches = [i for i,lump in enumerate(wad.lumps) if lump.name == name]
+    resolve_duplicates([wad.lumps[i] for i in matches], duplicate_policy)
+    if matches:
+        chosen = matches[-1] if duplicate_policy == 'last' else matches[0]
+        if ranges and not any(start < chosen < end for start,end in ranges):
+            raise DoomWadError(f'Sprite {name!r} exists outside a sprite range')
+        wad.lumps[chosen] = Lump(name, data)
+    elif ranges:
+        wad.insert(ranges[-1][1], name, data)
+    else:
+        wad.add('S_START', b'')
+        wad.add(name, data)
+        wad.add('S_END', b'')
+
+
+def decode_patch(name: str, data: bytes, palette: Palette, *,
+                 max_pixels: int = 4_194_304, profile: str = "vanilla") -> DecodedPatch:
     """Decode a Doom picture-format lump into an RGBA Pillow image."""
+    if profile not in ("vanilla", "source-port"):
+        raise DoomWadError("Patch profile must be vanilla or source-port")
     if len(data) < _HEADER_SIZE:
         raise DoomWadError(f"Patch {name!r} is too small to contain a header")
 
@@ -104,17 +148,25 @@ def decode_patch(name: str, data: bytes, palette: Palette) -> DecodedPatch:
     if width <= 0 or height <= 0:
         raise DoomWadError(f"Patch {name!r} has invalid dimensions {width}x{height}")
 
+    if width * height > max_pixels:
+        raise DoomWadError(f"Patch {name!r} exceeds configured pixel limit")
+
     columnofs_fmt = f"<{width}I"
     columnofs_size = struct.calcsize(columnofs_fmt)
     if _HEADER_SIZE + columnofs_size > len(data):
         raise DoomWadError(f"Patch {name!r} column table extends past end of lump")
     columnofs = struct.unpack_from(columnofs_fmt, data, _HEADER_SIZE)
 
+    if any(offset < _HEADER_SIZE + columnofs_size or offset >= len(data) for offset in columnofs):
+        raise DoomWadError(f"Patch {name!r} column offset is outside post data")
+
     image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     pixels = image.load()
+    indices = Image.new("L", (width, height))
 
     for col in range(width):
         offset = columnofs[col]
+        previous_top = -1
         while True:
             if offset >= len(data):
                 raise DoomWadError(f"Patch {name!r} column {col} runs off the end")
@@ -126,6 +178,11 @@ def decode_patch(name: str, data: bytes, palette: Palette) -> DecodedPatch:
             length = data[offset + 1]
             if offset + 3 + length + 1 > len(data):
                 raise DoomWadError(f"Patch {name!r} column {col} has truncated post data")
+            if profile == 'source-port' and topdelta <= previous_top:
+                topdelta += previous_top
+            previous_top = topdelta
+            if topdelta + length > height:
+                raise DoomWadError(f"Patch {name!r} post extends beyond image height")
             pixel_offset = offset + 3
             for i in range(length):
                 index = data[pixel_offset + i]
@@ -133,9 +190,10 @@ def decode_patch(name: str, data: bytes, palette: Palette) -> DecodedPatch:
                 y = topdelta + i
                 if y < height:
                     pixels[col, y] = (r, g, b, 255)
+                    indices.putpixel((col, y), index)
             offset = pixel_offset + length + 1
 
-    return DecodedPatch(name=name, image=image, left_offset=left, top_offset=top)
+    return DecodedPatch(name=name, image=image, left_offset=left, top_offset=top, palette_indices=indices)
 
 
 def encode_patch(
@@ -144,6 +202,7 @@ def encode_patch(
     top_offset: int,
     palette: Palette,
     alpha_threshold: int = _ALPHA_OPAQUE_THRESHOLD,
+    *, palette_indices: Image.Image | None = None, profile: str = "vanilla",
 ) -> bytes:
     """Encode an RGBA Pillow image back into Doom picture-format lump bytes."""
     if image.mode != "RGBA":
@@ -151,29 +210,49 @@ def encode_patch(
     width, height = image.size
     if width <= 0 or height <= 0:
         raise ValueError(f"Cannot encode an image with size {width}x{height}")
-    if height > _MAX_PATCH_HEIGHT:
+    if profile not in ('vanilla', 'source-port'):
+        raise ValueError('Patch profile must be vanilla or source-port')
+    if width > 32767 or height > 32767:
+        raise ValueError('Patch dimensions must fit signed 16-bit fields')
+    if profile == 'vanilla' and height > _MAX_PATCH_HEIGHT:
         raise ValueError(
             f"Image height {height} exceeds the Doom picture format's limit "
             f"of {_MAX_PATCH_HEIGHT}px (single-byte post offsets)"
         )
 
+    if palette_indices is not None and (palette_indices.mode != 'L' or palette_indices.size != image.size):
+        raise ValueError('Palette index image must be L mode with the same size as the patch')
     pixels = image.load()
     column_bytes: list[bytes] = []
 
     for x in range(width):
         col = bytearray()
         y = 0
+        previous_top = -1
         while y < height:
             if pixels[x, y][3] < alpha_threshold:
                 y += 1
                 continue
             run_start = y
             run = bytearray()
-            while y < height and pixels[x, y][3] >= alpha_threshold:
+            while y < height and pixels[x, y][3] >= alpha_threshold and len(run) < 255:
                 r, g, b, _a = pixels[x, y]
-                run.append(palette.nearest_index((r, g, b)))
+                original = palette_indices.getpixel((x, y)) if palette_indices is not None else None
+                index = original if original is not None and palette.rgb(original) == (r,g,b) else palette.nearest_index((r,g,b))
+                run.append(index)
                 y += 1
-            col += bytes([run_start, len(run), 0]) + bytes(run) + bytes([0])
+            if profile == 'source-port' and run_start > 254:
+                if previous_top < 254:
+                    col += bytes([254, 0, 0, 0])
+                    previous_top = 254
+                while run_start - previous_top > 254:
+                    col += bytes([254, 0, 0, 0])
+                    previous_top += 254
+                delta = run_start - previous_top
+            else:
+                delta = run_start
+            col += bytes([delta, len(run), 0]) + bytes(run) + bytes([0])
+            previous_top = run_start
         col.append(0xFF)
         column_bytes.append(bytes(col))
 

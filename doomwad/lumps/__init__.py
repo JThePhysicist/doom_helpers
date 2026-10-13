@@ -1,3 +1,4 @@
+from .map import DoomMap
 from .maps import (
     Linedef,
     Sector,
@@ -8,6 +9,7 @@ from .maps import (
 )
 
 __all__ = [
+    "DoomMap",
     "Thing",
     "Linedef",
     "Sidedef",

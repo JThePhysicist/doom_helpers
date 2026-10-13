@@ -5,6 +5,8 @@ import sys
 
 from .sprites import list_sprite_prefixes
 from .wad import Wad
+from .storage import atomic_write
+from .commands import execute
 
 
 def cmd_list(args: argparse.Namespace) -> int:
@@ -39,14 +41,14 @@ def cmd_extract(args: argparse.Namespace) -> int:
     wad = Wad.load(args.wad)
     lump = wad.find(args.lump)
     out_path = args.output or args.lump
-    with open(out_path, "wb") as f:
-        f.write(lump.data)
+    atomic_write(out_path, lump.data, overwrite=args.overwrite)
     print(f"Wrote {lump.size} bytes to {out_path}")
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="doomwad", description="Inspect and edit Doom WAD files")
+    parser.add_argument("--debug", action="store_true", help="Show tracebacks for diagnostics")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     p_list = subparsers.add_parser("list", help="List lumps in a WAD")
@@ -61,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_extract.add_argument("wad", help="Path to the WAD file")
     p_extract.add_argument("lump", help="Name of the lump to extract")
     p_extract.add_argument("-o", "--output", help="Output file path")
+    p_extract.add_argument("--overwrite", action="store_true")
     p_extract.set_defaults(func=cmd_extract)
 
     p_list_sprites = subparsers.add_parser(
@@ -73,13 +76,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_list_sprites.set_defaults(func=cmd_list_sprites)
 
+    p_atlas = subparsers.add_parser('atlas', help='Extract, realign, and rebuild sprite atlases')
+    atlas_commands = p_atlas.add_subparsers(dest='atlas_command', required=True)
+    from .commands import extract, realign, rebuild, preview
+    for name, module in [('extract', extract), ('realign', realign), ('rebuild', rebuild), ('preview', preview)]:
+        child = atlas_commands.add_parser(name, description=module.__doc__)
+        module.configure_parser(child)
+        child.set_defaults(func=lambda args, module=module, child=child: module.run(args, child))
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    return execute(lambda args, parser: args.func(args), args, parser)
 
 
 if __name__ == "__main__":

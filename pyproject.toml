@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,12 +8,13 @@ version = "0.1.0"
 description = "A library and CLI for reading and editing Doom WAD files"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "jjgossel" }]
 dependencies = ["Pillow>=10.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "hypothesis>=6.0", "pytest-cov>=4.0", "build>=1.2"]
 
 [project.scripts]
 doomwad = "doomwad.cli:main"
@@ -23,3 +24,7 @@ include = ["doomwad*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+patch = ["subprocess"]

@@ -13,7 +13,9 @@ class Palette:
     def __init__(self, colors: list[tuple[int, int, int]]):
         if len(colors) != PALETTE_SIZE:
             raise ValueError(f"Palette must have exactly {PALETTE_SIZE} colors")
-        self.colors = colors
+        if any(len(c) != 3 or any(type(v) is not int or not 0 <= v <= 255 for v in c) for c in colors):
+            raise ValueError('Palette colors must be RGB triples of bytes')
+        self.colors = list(colors)
         self._exact_index: dict[tuple[int, int, int], int] = {
             c: i for i, c in enumerate(colors)
         }
@@ -21,6 +23,8 @@ class Palette:
 
     @classmethod
     def from_playpal_bytes(cls, data: bytes, palette_index: int = 0) -> "Palette":
+        if type(palette_index) is not int or palette_index < 0:
+            raise DoomWadError("Palette index must be a nonnegative integer")
         start = palette_index * _PLAYPAL_ENTRY_SIZE
         end = start + _PLAYPAL_ENTRY_SIZE
         if end > len(data):

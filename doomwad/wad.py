@@ -6,6 +6,7 @@ from typing import Iterator
 
 from .exceptions import InvalidWadError, LumpNotFoundError
 from .lump import Lump
+from .storage import atomic_write
 
 _HEADER_FORMAT = "<4sii"
 _HEADER_SIZE = struct.calcsize(_HEADER_FORMAT)
@@ -23,12 +24,29 @@ class Wad:
         self.lumps: list[Lump] = []
 
     @classmethod
-    def load(cls, path: str | Path) -> "Wad":
-        data = Path(path).read_bytes()
-        return cls.from_bytes(data)
+    def load(cls, path: str | Path, *, max_bytes: int = 512 * 1024 * 1024,
+             max_lumps: int = 1_000_000) -> "Wad":
+        if Path(path).stat().st_size > max_bytes:
+            raise InvalidWadError("WAD exceeds configured byte limit")
+        with Path(path).open('rb') as stream:
+            # Incremental reads avoid preallocating the configured maximum.
+            chunks = []
+            total = 0
+            while True:
+                chunk = stream.read(min(1024 * 1024, max_bytes + 1 - total))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > max_bytes:
+                    raise InvalidWadError('WAD exceeds configured byte limit')
+            data = b''.join(chunks)
+        if len(data) > max_bytes:
+            raise InvalidWadError("WAD exceeds configured byte limit")
+        return cls.from_bytes(data, max_lumps=max_lumps)
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "Wad":
+    def from_bytes(cls, data: bytes, *, max_lumps: int = 1_000_000) -> "Wad":
         if len(data) < _HEADER_SIZE:
             raise InvalidWadError("File is too small to contain a WAD header")
 
@@ -41,11 +59,13 @@ class Wad:
 
         wad = cls(wad_type=wad_type)
 
+        if num_lumps > max_lumps:
+            raise InvalidWadError("WAD exceeds configured lump limit")
         if num_lumps < 0:
             raise InvalidWadError("WAD has a negative lump count")
 
         dir_end = info_table_ofs + num_lumps * _DIRENTRY_SIZE
-        if info_table_ofs < 0 or dir_end > len(data):
+        if info_table_ofs < _HEADER_SIZE or dir_end > len(data):
             raise InvalidWadError("WAD directory extends past end of file")
 
         for i in range(num_lumps):
@@ -70,6 +90,16 @@ class Wad:
 
         return wad
 
+    def validate(self) -> None:
+        from .sprites import sprite_ranges
+        sprite_ranges(self)
+        for lump in self.lumps:
+            if (not isinstance(lump.name, str) or not lump.name or len(lump.name) > 8
+                    or not lump.name.isascii() or '\x00' in lump.name):
+                raise InvalidWadError('Lump names must be nonempty ASCII names of at most 8 bytes')
+            if not isinstance(lump.data, bytes):
+                raise InvalidWadError('Lump data must be bytes')
+
     def to_bytes(self) -> bytes:
         body = bytearray()
         directory = bytearray()
@@ -90,7 +120,7 @@ class Wad:
         return bytes(header) + bytes(body) + bytes(directory)
 
     def save(self, path: str | Path) -> None:
-        Path(path).write_bytes(self.to_bytes())
+        atomic_write(path, self.to_bytes())
 
     def find(self, name: str) -> Lump:
         for lump in self.lumps:
