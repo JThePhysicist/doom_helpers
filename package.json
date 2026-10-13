@@ -1,0 +1,11 @@
+{
+  "name": "doom-helpers-personal-builder",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:personal-v2": "node scripts/build_personal_v2_cli.mjs"
+  },
+  "dependencies": {
+    "pngjs": "7.0.0"
+  }
+}

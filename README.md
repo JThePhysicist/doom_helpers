@@ -132,3 +132,7 @@ for tall patches in compatible engines. Extraction/rebuilding require
 ```bash
 pytest
 ```
+
+## Personal game sprites
+
+The [V2 personal sprite builder](docs/personal-v2.md) combines connected character heads, all HUD face expressions, and flaming-face fireballs using explicitly supplied local assets. Its original output was confirmed working in the GOG rerelease; no personal or commercial game assets are included.
