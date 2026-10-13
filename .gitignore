@@ -14,3 +14,23 @@ venv/
 .coverage
 coverage.xml
 htmlcov/
+
+# Personal workspace inputs, archives, and generated game assets
+archive/
+outputs/
+local_assets/
+node_modules/
+.uv-cache/
+*.WAD
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.premerge
+*_manifest.json
+*_mapping*.json*
+face_matches*.json
+data/doom_wad_manifest.jsonl
+!tests/**/*.png
+!fixtures/**/*.png

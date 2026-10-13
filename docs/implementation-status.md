@@ -2,10 +2,8 @@
 
 Each of the 19 original backlog items has its own branch, based on the previous
 branch. A final integration branch updates documentation, corrects integration
-edge cases, and records complete-stack validation. Branches are pushed; PR creation
-is currently blocked by GitHub API network access. The initial fixes/documentation
-were already pushed to the repository default branch, so that PR also needs a
-maintainer-selected target branch.
+edge cases, and records complete-stack validation. The consolidated PR targets `main`, created from the previous default branch.
+All improvement commits are included in order; the original stacked branches remain available.
 
 | Order | Improvement branch | Result |
 | --- | --- | --- |
@@ -31,6 +29,9 @@ maintainer-selected target branch.
 | 20 | [improve/20-integration-docs](https://github.com/JThePhysicist/doom_helpers/tree/improve/20-integration-docs) | Integrate docs, pixel budgets, node-builder vertex imports, and real-engine validation |
 
 ## Validation evidence
+
+- PR preparation revalidated the integrated stack on Windows, Python 3.12.13:
+  106 tests passed with 90.36% branch-inclusive coverage.
 
 - All 106 tests pass locally on Python 3.9, 3.10, 3.11, 3.12, 3.13, and 3.14.
   Python 3.12 branch-inclusive coverage is 90.36%, above the 80% CI gate.
